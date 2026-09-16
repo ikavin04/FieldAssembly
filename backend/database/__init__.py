@@ -1,1 +1,1 @@
-# Database package — connection, migrations, and queries.
+# Database package — connection, schema, and seed data.

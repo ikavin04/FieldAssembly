@@ -1,1 +1,1 @@
-# Tools package — AssemblyAI voice agent tool definitions.
+# Tools package — functions exposed to the AssemblyAI Voice Agent.

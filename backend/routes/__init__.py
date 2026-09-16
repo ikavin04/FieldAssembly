@@ -1,1 +1,1 @@
-# Routes package — register Flask blueprints here.
+# Routes package — Flask blueprints for API endpoints.

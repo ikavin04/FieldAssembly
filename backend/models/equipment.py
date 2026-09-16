@@ -1,3 +1,25 @@
 """Equipment data model."""
 
-# TODO: Equipment query/insert helpers
+from database.connection import get_connection
+
+
+def get_all_equipment():
+    """Fetch all equipment assets from PostgreSQL."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM equipment ORDER BY id;")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def get_equipment_by_id(equipment_id):
+    """Fetch a single equipment asset by ID."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM equipment WHERE id = %s;", (equipment_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row

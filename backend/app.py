@@ -38,6 +38,7 @@ def create_app():
     from routes.tickets import tickets_bp
     from routes.alerts import alerts_bp
     from routes.reports import reports_bp
+    from routes.tools import tools_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(voice_bp)
@@ -47,6 +48,7 @@ def create_app():
     app.register_blueprint(tickets_bp)
     app.register_blueprint(alerts_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(tools_bp)
 
     logger.info("FieldVoice backend ready")
     return app

@@ -23,3 +23,15 @@ def get_equipment_by_id(equipment_id):
     cur.close()
     conn.close()
     return row
+
+
+def get_equipment_by_asset_code(asset_code):
+    """Fetch a single equipment asset by its human-facing asset tag."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM equipment WHERE asset_code = %s;", (asset_code,))
+        return cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()

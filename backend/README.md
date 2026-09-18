@@ -80,8 +80,48 @@ Response:
 }
 ```
 
+### Voice tools
+
+```text
+POST /api/tools/get-equipment-profile
+```
+
+Accepts `{ "asset_code": "AC-001" }` and returns the public inspection profile
+for that equipment asset. Invalid asset tags return `400`; unknown assets return
+`404`.
+
+### Inspections
+
+```text
+POST /api/inspections
+GET  /api/inspections/<inspection_id>
+```
+
+Create an inspection with `{ "equipment_id": 1, "inspection_type": "routine" }`.
+The retrieval response includes backend-derived required, completed, and missing
+inspection fields.
+
+### Observations
+
+```text
+POST /api/observations
+GET  /api/inspections/<inspection_id>/observations
+```
+
+Observation requests accept `inspection_id`, `field_name`, `value`, and optional
+`unit`, `evidence_text`, `source_timestamp`, and `confidence`. Fields are checked
+against the selected equipment's required inspection fields.
+
+### Observation voice tool
+
+```text
+POST /api/tools/save-observation
+```
+
+This is the browser-to-backend endpoint used by the AssemblyAI tool call. Exact
+retries for the same inspection, field, value, and evidence are idempotent.
+
 ## Notes
 
 - The backend uses a Flask application factory pattern (`create_app`) for clean extensibility.
-- Routes, services, tools, models, and database packages are prepared but not yet implemented.
-- AssemblyAI integration, database connections, and tool calling will be added in future phases.
+- Inspection lifecycle, observation, ticket, alert, and report endpoints remain future phases.

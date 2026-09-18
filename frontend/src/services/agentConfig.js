@@ -186,10 +186,44 @@ export const TURN_DETECTION = {
 };
 
 // ---------------------------------------------------------------------------
-// Tools — empty for now, populated in Step 5+
+// Tools — backend-owned operations exposed to the AssemblyAI agent.
 // ---------------------------------------------------------------------------
 
-export const TOOLS = [];
+export const TOOLS = [
+  {
+    type: "function",
+    name: "get_equipment_profile",
+    description: "Retrieve authoritative equipment information for the active inspection. Use the exact asset tag spoken or selected by the technician, such as AC-001. Do not convert an asset tag into a numeric ID or invent an asset tag.",
+    parameters: {
+      type: "object",
+      properties: {
+        asset_code: {
+          type: "string",
+          description: "The exact human-facing equipment asset tag, for example AC-001.",
+        },
+      },
+      required: ["asset_code"],
+    },
+  },
+  {
+    type: "function",
+    name: "save_observation",
+    description: "Save a factual observation provided by the technician during the active inspection. Do not use this tool for invented values or unrelated fields.",
+    parameters: {
+      type: "object",
+      properties: {
+        inspection_id: { type: "integer", description: "The active inspection database ID." },
+        field_name: { type: "string", description: "The required inspection field being observed." },
+        value: { type: "string", description: "The factual value reported by the technician." },
+        unit: { type: "string", description: "The reported unit, when applicable." },
+        evidence_text: { type: "string", description: "The exact spoken observation text, when available." },
+        source_timestamp: { type: "number", description: "Source audio timestamp in seconds, when available." },
+        confidence: { type: "number", description: "Speech extraction confidence from 0 to 1, when available." },
+      },
+      required: ["inspection_id", "field_name", "value"],
+    },
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Build the full session.update payload

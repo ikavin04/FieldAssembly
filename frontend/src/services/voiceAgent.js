@@ -10,6 +10,7 @@
  */
 
 import { buildSessionConfig } from "./agentConfig.js";
+import { executeVoiceTool } from "./api.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -74,6 +75,7 @@ export class VoiceAgent {
     // State
     this._state = ConnectionState.DISCONNECTED;
     this._sessionReady = false;
+    this._pendingToolResults = [];
 
     // Callbacks
     this.onStateChange = null; // (newState) => {}
@@ -244,7 +246,16 @@ export class VoiceAgent {
 
       case "reply.done":
         console.log("[Voice] Reply complete");
+        if (msg.status === "interrupted") {
+          this._pendingToolResults = [];
+          break;
+        }
+        this._sendPendingToolResults();
         // After audio finishes playing, state will return to LISTENING
+        break;
+
+      case "tool.call":
+        this._handleToolCall(msg);
         break;
 
       case "session.error":
@@ -262,6 +273,42 @@ export class VoiceAgent {
       default:
         // Silently ignore unrecognized events
         break;
+    }
+  }
+
+  async _handleToolCall(msg) {
+    const callId = msg.call_id;
+    const toolName = msg.name;
+    if (!callId || !toolName) {
+      console.warn("[Voice] Ignoring malformed tool.call");
+      return;
+    }
+
+    const toolPromise = Promise.resolve().then(() =>
+      executeVoiceTool(toolName, msg.arguments || {})
+    ).catch((err) => ({ success: false, error: err.message }));
+
+    this._pendingToolResults.push({ callId, result: toolPromise });
+    console.log(`[Voice] Tool requested: ${toolName}`);
+  }
+
+  async _sendPendingToolResults() {
+    const pending = this._pendingToolResults;
+    this._pendingToolResults = [];
+    if (!pending.length) return;
+
+    const results = await Promise.all(pending.map(async ({ callId, result }) => ({
+      callId,
+      result: await result,
+    })));
+
+    if (this._ws?.readyState !== WebSocket.OPEN) return;
+    for (const { callId, result } of results) {
+      this._ws.send(JSON.stringify({
+        type: "tool.result",
+        call_id: callId,
+        result: JSON.stringify(result),
+      }));
     }
   }
 

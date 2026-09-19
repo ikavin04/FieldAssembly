@@ -1,13 +1,21 @@
 """Inspection lifecycle and observation capture services."""
 
 from models.equipment import get_equipment_by_id
-from models.inspection import create_inspection, get_inspection_by_id
+from models.inspection import (
+	complete_inspection,
+	create_inspection,
+	get_inspection_by_id,
+)
 from models.observation import (
 	create_observation,
 	find_duplicate_observation,
 	get_observations_for_inspection,
 )
 from services.evidence_service import normalize_evidence
+from services.validation_service import (
+	validate_all_observations,
+	validate_observation_for_inspection,
+)
 
 
 class InspectionServiceError(Exception):
@@ -32,6 +40,34 @@ def start_inspection(equipment_id, inspection_type="routine"):
 	return create_inspection(equipment_id, inspection_type.strip())
 
 
+def finish_inspection(inspection_id, summary=None):
+	"""Complete an inspection and return clean service-layer result."""
+	if not isinstance(inspection_id, int) or isinstance(inspection_id, bool) or inspection_id <= 0:
+		raise InspectionServiceError("inspection_id must be a positive integer", 400)
+
+	inspection = get_inspection_by_id(inspection_id)
+	if inspection is None:
+		raise InspectionServiceError("Inspection not found", 404)
+
+	if summary is not None and not isinstance(summary, str):
+		raise InspectionServiceError("summary must be a string or null", 400)
+
+	normalized_summary = summary.strip() if isinstance(summary, str) else None
+	updated = complete_inspection(inspection_id, normalized_summary)
+	if updated is None:
+		raise InspectionServiceError("Inspection not found", 404)
+
+	return {
+		"id": updated["id"],
+		"equipment_id": updated["equipment_id"],
+		"inspection_type": updated["inspection_type"],
+		"status": updated["status"],
+		"started_at": updated["started_at"],
+		"completed_at": updated["completed_at"],
+		"summary": updated["summary"],
+	}
+
+
 def _required_fields(inspection):
 	fields = inspection.get("required_inspection_fields") or []
 	return [field.strip() for field in fields if isinstance(field, str) and field.strip()]
@@ -50,6 +86,9 @@ def get_inspection(inspection_id):
 		if field_name in required_fields and field_name not in completed_fields:
 			completed_fields.append(field_name)
 
+	# Backend-authoritative validation summary per completed field
+	validation = validate_all_observations(inspection_id)
+
 	return {
 		"id": inspection["id"],
 		"equipment_id": inspection["equipment_id"],
@@ -61,6 +100,7 @@ def get_inspection(inspection_id):
 		"completed_fields": completed_fields,
 		"missing_fields": [field for field in required_fields if field not in completed_fields],
 		"complete": len(completed_fields) == len(required_fields),
+		"validation": validation,
 	}
 
 
@@ -109,9 +149,12 @@ def save_observation(
 		inspection_id, canonical_field, normalized_value, evidence_text
 	)
 	if duplicate is not None:
-		return duplicate, True
+		validation = validate_observation_for_inspection(
+			inspection_id, canonical_field, normalized_value, normalized_unit,
+		)
+		return duplicate, True, validation
 
-	return create_observation(
+	observation = create_observation(
 		inspection_id,
 		canonical_field,
 		normalized_value,
@@ -119,4 +162,8 @@ def save_observation(
 		evidence_text,
 		source_timestamp,
 		confidence,
-	), False
+	)
+	validation = validate_observation_for_inspection(
+		inspection_id, canonical_field, normalized_value, normalized_unit,
+	)
+	return observation, False, validation

@@ -88,7 +88,10 @@ export class VoiceAgent {
     this.onAgentTranscript = null; // (text) => {}
     this.onError = null; // (message) => {}
     this.onSessionEnded = null; // () => {}
+    this.onObservationSaved = null; // (result) => {}
+    this.onInspectionCompleted = null; // (result) => {}
   }
+
 
   // -------------------------------------------------------------------------
   // Public API
@@ -303,14 +306,14 @@ export class VoiceAgent {
     }
 
     const argumentsObject = { ...msg.arguments };
-    if (toolName === "save_observation" && !this._activeInspectionId) {
+    if ((toolName === "save_observation" || toolName === "complete_inspection") && !this._activeInspectionId) {
       this._pendingToolResults.push({
         callId,
         result: Promise.resolve({ success: false, error: "No active inspection context" }),
       });
       return;
     }
-    if (toolName === "save_observation") {
+    if (toolName === "save_observation" || toolName === "complete_inspection") {
       if (argumentsObject.inspection_id && Number(argumentsObject.inspection_id) !== Number(this._activeInspectionId)) {
         console.warn("[Voice] Replacing mismatched inspection_id from tool call");
       }
@@ -322,13 +325,21 @@ export class VoiceAgent {
     }
 
     console.log("[Voice] Tool call arguments", toolName, argumentsObject);
-    const toolPromise = Promise.resolve().then(() =>
-      executeVoiceTool(toolName, argumentsObject)
-    ).catch((err) => ({ success: false, error: err.message }));
+    const toolPromise = Promise.resolve().then(async () => {
+      const res = await executeVoiceTool(toolName, argumentsObject);
+      if (toolName === "save_observation" && res?.success) {
+        this.onObservationSaved?.(res);
+      }
+      if (toolName === "complete_inspection" && res?.success) {
+        this.onInspectionCompleted?.(res);
+      }
+      return res;
+    }).catch((err) => ({ success: false, error: err.message }));
 
     this._pendingToolResults.push({ callId, result: toolPromise });
     console.log(`[Voice] Tool requested: ${toolName}`);
   }
+
 
   async _sendPendingToolResults() {
     const pending = this._pendingToolResults;

@@ -38,7 +38,7 @@ def create_observation_endpoint():
 		return jsonify({"success": False, "error": "inspection_id must be a positive integer"}), 400
 
 	try:
-		observation, duplicate = save_observation(
+		observation, duplicate, validation = save_observation(
 			inspection_id=inspection_id,
 			field_name=payload.get("field_name"),
 			value=payload.get("value"),
@@ -57,6 +57,7 @@ def create_observation_endpoint():
 		"success": True,
 		"observation": _serialize_observation(observation),
 		"duplicate": duplicate,
+		"validation": validation,
 	}), 200 if duplicate else 201
 
 

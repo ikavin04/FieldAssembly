@@ -80,7 +80,7 @@ function App() {
         {page === 'dashboard' && <DashboardPage navigate={navigate} equipment={equipment} state={equipmentState} />}
         {page === 'equipment' && <EquipmentPage navigate={navigate} equipment={equipment} state={equipmentState} />}
         {page === 'inspection' && <InspectionPage navigate={navigate} equipment={equipment} path={path} />}
-        {page === 'result' && <ResultPage navigate={navigate} />}
+        {page === 'result' && <ResultPage navigate={navigate} path={path} equipment={equipment} />}
         {page === 'tickets' && <EmptyDataPage type="tickets" />}
         {page === 'alerts' && <EmptyDataPage type="alerts" />}
         {page === 'report' && <ReportPage navigate={navigate} />}
@@ -141,6 +141,9 @@ function InspectionPage({ navigate, equipment, path }) {
   const selected = equipment.find((item) => String(item.id) === params.get('equipment'))
   const [activeInspectionId, setActiveInspectionId] = useState(routeId && routeId !== 'new' ? Number(routeId) : null)
   const [inspectionState, setInspectionState] = useState(routeId === 'new' ? 'creating' : 'ready')
+  const [inspectionData, setInspectionData] = useState(null)
+  const [isCompleting, setIsCompleting] = useState(false)
+  const [completionError, setCompletionError] = useState(null)
 
   useEffect(() => {
     if (routeId !== 'new' || !selected || activeInspectionId) return
@@ -166,11 +169,350 @@ function InspectionPage({ navigate, equipment, path }) {
     return () => { cancelled = true }
   }, [routeId, selected, activeInspectionId])
 
+  // Poll GET /api/inspections/:id to keep checklist synchronized with PostgreSQL
+  useEffect(() => {
+    if (!activeInspectionId) return undefined
+    let isMounted = true
+
+    const fetchInspection = async () => {
+      try {
+        const res = await fetch(`/api/inspections/${activeInspectionId}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (isMounted) {
+          setInspectionData(data)
+        }
+      } catch {
+        // network error handled gracefully
+      }
+    }
+
+    fetchInspection()
+    const interval = setInterval(() => {
+      if (inspectionData?.status !== 'completed') {
+        fetchInspection()
+      }
+    }, 3000)
+
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [activeInspectionId, inspectionData?.status])
+
+  const handleCompleteInspection = async () => {
+    if (!activeInspectionId || isCompleting) return
+    setIsCompleting(true)
+    setCompletionError(null)
+    try {
+      const res = await fetch(`/api/inspections/${activeInspectionId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Completion failed (${res.status})`)
+      }
+      const payload = await res.json()
+      setInspectionData(payload.inspection)
+      navigate(`/inspection/${activeInspectionId}/result`)
+    } catch (err) {
+      setCompletionError(err.message)
+    } finally {
+      setIsCompleting(false)
+    }
+  }
+
+  // Derive checklist items: prefer inspectionData.required_fields from backend, fallback to equipment fields
+  const checklistFields = inspectionData?.required_fields || selected?.required_inspection_fields || []
+  const completedFields = inspectionData?.completed_fields || []
+
   const statusText = inspectionState === 'creating' ? 'Creating inspection' : inspectionState === 'error' ? 'Inspection unavailable' : activeInspectionId ? `Inspection #${activeInspectionId}` : 'Select an equipment asset'
-  return <div className="page-body inspection-page"><div className="inspection-context"><div><p className="eyebrow">Inspection workspace / {selected?.asset_code || 'new session'}</p><h2>{selected?.name || 'Select an equipment asset'}</h2><p className="muted">{selected?.location || 'Equipment context will be attached when you start from the catalog.'}</p></div><span className="status-badge">{statusText}</span></div><div className="inspection-layout"><div><VoiceTestPanel inspectionId={activeInspectionId} equipment={selected} /><button className="complete-button" onClick={() => navigate(`/inspection/${activeInspectionId || 'new'}/result`)}>Complete inspection →</button></div><aside className="checklist-panel"><p className="eyebrow">Required fields</p><h3>Inspection checklist</h3>{(selected?.required_inspection_fields || []).map((field) => <div className="checklist-item" key={typeof field === 'string' ? field : JSON.stringify(field)}><span>○</span><span>{typeof field === 'string' ? field : field.name || field.field_name || 'Required observation'}</span></div>)}{!selected && <EmptyState title="Waiting for equipment" text="Start from Equipment to load the backend-defined checkpoints." />}</aside></div></div>
+
+  return (
+    <div className="page-body inspection-page">
+      <div className="inspection-context">
+        <div>
+          <p className="eyebrow">Inspection workspace / {selected?.asset_code || 'new session'}</p>
+          <h2>{selected?.name || 'Select an equipment asset'}</h2>
+          <p className="muted">{selected?.location || 'Equipment context will be attached when you start from the catalog.'}</p>
+        </div>
+        <span className="status-badge">{statusText}</span>
+      </div>
+      <div className="inspection-layout">
+        <div>
+          <VoiceTestPanel inspectionId={activeInspectionId} equipment={selected} />
+          <button
+            className="complete-button"
+            disabled={isCompleting || !activeInspectionId}
+            onClick={handleCompleteInspection}
+          >
+            {isCompleting ? 'Completing inspection...' : 'Complete inspection →'}
+          </button>
+          {completionError && (
+            <p style={{ color: '#e48670', fontSize: '11px', marginTop: '6px', fontFamily: "'DM Mono', monospace" }}>
+              {completionError}
+            </p>
+          )}
+        </div>
+        <aside className="checklist-panel">
+          <p className="eyebrow">Required fields</p>
+          <h3>Inspection checklist</h3>
+          {checklistFields.map((field) => {
+            const fieldName = typeof field === 'string' ? field : field.name || field.field_name || 'Required observation'
+            const isCompleted = completedFields.includes(fieldName)
+            const fieldValidation = inspectionData?.validation?.[fieldName]
+            const validationStatus = fieldValidation?.status
+            return (
+              <div className="checklist-item" key={fieldName}>
+                <span style={{ color: isCompleted ? '#2f6558' : '#738071', fontWeight: isCompleted ? 700 : 400 }}>
+                  {isCompleted ? '✓' : '○'}
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ color: isCompleted ? '#111827' : '#738071', fontWeight: isCompleted ? 600 : 400 }}>
+                    {fieldName}
+                  </span>
+                  {isCompleted && fieldValidation && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {fieldValidation.value != null && (
+                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '10px', color: '#7a8490' }}>
+                          {fieldValidation.value}{fieldValidation.unit ? ` ${fieldValidation.unit}` : ''}
+                        </span>
+                      )}
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        color: validationStatus === 'normal' ? '#2f6558'
+                          : validationStatus === 'out_of_range' ? '#b45309'
+                          : '#7a8490',
+                        textTransform: 'capitalize',
+                      }}>
+                        {validationStatus === 'out_of_range' ? '⚠ Out of range' : validationStatus === 'normal' ? 'Normal' : 'Unknown'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {!selected && !activeInspectionId && (
+            <EmptyState title="Waiting for equipment" text="Start from Equipment to load the backend-defined checkpoints." />
+          )}
+        </aside>
+      </div>
+    </div>
+  )
 }
 
-function ResultPage({ navigate }) { return <div className="page-body"><section className="result-banner"><div><span className="success-mark">✓</span><div><p className="eyebrow">Inspection complete</p><h2>Your record is ready to review.</h2><p className="muted">This result view will populate from the inspection and observation APIs.</p></div></div><button className="primary-cta" onClick={() => navigate('/reports/new')}>View report ↗</button></section><div className="result-grid"><div className="section-block"><div className="section-heading"><h2>Observations</h2><span className="status-badge neutral">Awaiting data</span></div><EmptyState title="No observations captured" text="Voice observations and spoken evidence will appear here after the backend creates an inspection." /></div><div className="section-block"><div className="section-heading"><h2>Evidence timeline</h2></div><EmptyState title="No evidence yet" text="Every saved observation will retain its original spoken evidence." /></div></div><button className="secondary-cta" onClick={() => navigate('/equipment')}>Start another inspection</button></div> }
+function ResultPage({ navigate, path, equipment }) {
+  const routeId = path.split('/')[2]?.split('?')[0]
+  const inspectionId = routeId && routeId !== 'new' ? Number(routeId) : null
+  const [inspection, setInspection] = useState(null)
+  const [observations, setObservations] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!inspectionId) {
+      setLoading(false)
+      setError('No inspection ID provided')
+      return
+    }
+
+    let isMounted = true
+    setLoading(true)
+    setError(null)
+
+    Promise.all([
+      fetch(`/api/inspections/${inspectionId}`).then((r) => {
+        if (!r.ok) throw new Error(`Inspection #${inspectionId} not found`)
+        return r.json()
+      }),
+      fetch(`/api/inspections/${inspectionId}/observations`).then((r) => {
+        if (!r.ok) return []
+        return r.json()
+      }),
+    ])
+      .then(([insData, obsData]) => {
+        if (!isMounted) return
+        setInspection(insData)
+        setObservations(Array.isArray(obsData) ? obsData : [])
+      })
+      .catch((err) => {
+        if (!isMounted) return
+        setError(err.message)
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false)
+      })
+
+    return () => { isMounted = false }
+  }, [inspectionId])
+
+  const selectedEquipment = equipment.find((e) => e.id === inspection?.equipment_id)
+
+  if (loading) {
+    return (
+      <div className="page-body">
+        <LoadingState text="Loading inspection record..." />
+      </div>
+    )
+  }
+
+  if (error || !inspection) {
+    return (
+      <div className="page-body">
+        <EmptyState title="Inspection not found" text={error || `Could not load inspection #${inspectionId}`} />
+        <button className="secondary-cta" style={{ marginTop: '20px' }} onClick={() => navigate('/equipment')}>
+          Return to equipment catalog
+        </button>
+      </div>
+    )
+  }
+
+  const isCompleted = inspection.status === 'completed'
+  const validationSummary = inspection.validation || {}
+
+  return (
+    <div className="page-body">
+      <section className="result-banner">
+        <div>
+          <span className="success-mark">✓</span>
+          <div>
+            <p className="eyebrow">Inspection {isCompleted ? 'Complete' : 'In Progress'} / #{inspection.id}</p>
+            <h2>{isCompleted ? 'Your record is verified and saved.' : 'Active inspection session.'}</h2>
+            <p className="muted">
+              {selectedEquipment ? `${selectedEquipment.asset_code} — ${selectedEquipment.name}` : `Asset #${inspection.equipment_id}`}
+              {selectedEquipment?.location ? ` • ${selectedEquipment.location}` : ''}
+              {inspection.completed_at ? ` • Completed: ${new Date(inspection.completed_at).toLocaleString()}` : ''}
+            </p>
+          </div>
+        </div>
+        <button className="primary-cta" onClick={() => navigate('/equipment')}>
+          Start another inspection ↗
+        </button>
+      </section>
+
+      {inspection.summary && (
+        <section style={{ margin: '20px 0', padding: '16px 20px', background: '#fff', border: '1px solid #e4e1d9', borderRadius: '14px' }}>
+          <p className="eyebrow">Summary</p>
+          <p style={{ margin: 0, color: '#111827', fontSize: '13px', lineHeight: 1.6 }}>{inspection.summary}</p>
+        </section>
+      )}
+
+      <div className="result-grid" style={{ marginTop: '24px' }}>
+        {/* Observations Block */}
+        <div className="section-block">
+          <div className="section-heading">
+            <h2>Recorded Observations</h2>
+            <span className={`status-badge ${isCompleted ? '' : 'neutral'}`}>
+              {observations.length} {observations.length === 1 ? 'record' : 'records'}
+            </span>
+          </div>
+          {observations.length > 0 ? (
+            <div style={{ display: 'grid', gap: '12px' }}>
+              {observations.map((obs) => {
+                const vResult = validationSummary[obs.field_name]
+                const vStatus = vResult?.status
+                return (
+                  <div
+                    key={obs.id}
+                    style={{
+                      padding: '16px',
+                      border: vStatus === 'out_of_range' ? '1px solid #d97706' : '1px solid #e4e1d9',
+                      borderRadius: '12px',
+                      background: vStatus === 'out_of_range' ? '#fffbeb' : '#fff',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <strong style={{ fontSize: '13px', color: '#111827', textTransform: 'capitalize' }}>
+                        {obs.field_name}
+                      </strong>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '12px', color: '#2f6558', fontWeight: 600 }}>
+                        {obs.value} {obs.unit || ''}
+                      </span>
+                    </div>
+                    {vResult && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: vStatus === 'normal' ? '#2f6558' : vStatus === 'out_of_range' ? '#b45309' : '#7a8490',
+                        }}>
+                          {vStatus === 'out_of_range' ? '⚠ Out of range' : vStatus === 'normal' ? '✓ Normal' : 'Unknown'}
+                        </span>
+                        {vResult.limit && (
+                          <span style={{ fontSize: '10px', color: '#7a8490', fontFamily: "'DM Mono', monospace" }}>
+                            Range: {vResult.limit.min}–{vResult.limit.max}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {obs.evidence_text && (
+                      <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#7a8490', fontStyle: 'italic' }}>
+                        Spoken evidence: &quot;{obs.evidence_text}&quot;
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <EmptyState
+              title="No observations captured"
+              text="No observations were recorded for this inspection in PostgreSQL."
+            />
+          )}
+        </div>
+
+        {/* Evidence Timeline */}
+        <div className="section-block">
+          <div className="section-heading">
+            <h2>Evidence Timeline</h2>
+            <span className="status-badge">
+              Spoken Quotes
+            </span>
+          </div>
+          {observations.filter((o) => o.evidence_text).length > 0 ? (
+            <div style={{ display: 'grid', gap: '12px' }}>
+              {observations.filter((o) => o.evidence_text).map((obs) => (
+                <div
+                  key={`evidence-${obs.id}`}
+                  style={{
+                    padding: '14px',
+                    border: '1px solid #e4e1d9',
+                    borderRadius: '12px',
+                    background: '#fff',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#7a8490', fontFamily: "'DM Mono', monospace", marginBottom: '4px' }}>
+                    <span style={{ textTransform: 'uppercase' }}>{obs.field_name}</span>
+                    <span>Observation #{obs.id}</span>
+                  </div>
+                  <blockquote style={{ margin: 0, color: '#111827', fontSize: '12px', lineHeight: 1.5 }}>
+                    "{obs.evidence_text}"
+                  </blockquote>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No evidence yet"
+              text="Spoken statements stored in PostgreSQL will appear here."
+            />
+          )}
+        </div>
+      </div>
+
+      <div style={{ marginTop: '32px' }}>
+        <button className="secondary-cta" onClick={() => navigate('/equipment')}>
+          ← Back to equipment catalog
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function EmptyDataPage({ type }) { const isAlert = type === 'alerts'; return <div className="page-body"><section className="page-intro"><div><p className="eyebrow">{isAlert ? 'Safety events' : 'Maintenance actions'}</p><h2>{isAlert ? 'Safety alerts' : 'Maintenance tickets'}</h2><p className="muted">{isAlert ? 'Conditions detected during inspections, with evidence attached.' : 'Actions created from inspection findings.'}</p></div><span className="record-count">— records</span></section><div className="filter-row"><button className="filter-chip active">All</button><button className="filter-chip">Open</button><button className="filter-chip">Resolved</button></div><EmptyState title={isAlert ? 'No safety alerts yet.' : 'No maintenance tickets yet.'} text="Records created by the backend will appear here. The frontend does not manufacture operational data." /></div> }
 

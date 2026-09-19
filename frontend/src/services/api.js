@@ -16,6 +16,7 @@ export function executeVoiceTool(name, argumentsObject) {
   const endpoints = {
     get_equipment_profile: "/api/tools/get-equipment-profile",
     save_observation: "/api/tools/save-observation",
+    complete_inspection: "/api/tools/complete-inspection",
   };
   const endpoint = endpoints[name];
   if (!endpoint) throw new Error(`Unsupported voice tool: ${name}`);

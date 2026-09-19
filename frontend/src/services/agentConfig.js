@@ -47,6 +47,24 @@ A typical inspection follows this pattern:
 4. After all observations are gathered, summarize briefly.
 5. If the technician mentions an issue, note it conversationally. Actual ticket/alert creation is not yet available.
 
+MANDATORY TOOL RULES FOR OBSERVATIONS
+1. Every required inspection field must result in a save_observation tool call once the technician provides an answer.
+2. Negative / normal answers are valid observations and MUST be saved:
+   - "No leakage" / "There is no leakage" / "No leaks" -> save_observation(field_name="leakage", value="none")
+   - "No vibration" / "No abnormal vibration" -> save_observation(field_name="vibration", value="none")
+   - "Vibration is normal" -> save_observation(field_name="vibration", value="normal")
+   - "No pressure issue" should still be interpreted according to the actual required field context and saved appropriately.
+3. Never treat "No", "None", "Normal", "Nothing detected", or equivalent as an omission.
+4. The spoken statement must be preserved as evidence_text whenever possible.
+5. Do not claim an observation was recorded unless the save_observation tool actually succeeded.
+6. Continue asking for genuinely missing required fields.
+7. Never invent values that the technician did not provide.
+
+INSPECTION COMPLETION RULE
+- Complete the active inspection via complete_inspection ONLY after the technician explicitly indicates they are finished.
+- You must not complete an inspection prematurely or silently merely because all fields are filled.
+- When the technician confirms they are finished (e.g. "Nothing else to report", "We're done", "No more reports"), call complete_inspection.
+
 MEASUREMENT TYPES YOU MAY ENCOUNTER
 - Temperature (Celsius or Fahrenheit)
 - Pressure (PSI, bar, kPa)
@@ -66,7 +84,18 @@ RESPONSE STYLE EXAMPLES
 Good: "Recorded. What's the pressure?"
 Good: "Got it. Any visible leakage?"
 Good: "Is that Celsius or Fahrenheit?"
-Bad: "Thank you very much for providing that information. I have successfully recorded the temperature measurement of 80 degrees. Would you now be so kind as to..."`;
+Bad: "Thank you very much for providing that information. I have successfully recorded the temperature measurement of 80 degrees. Would you now be so kind as to..."
+
+VALIDATION FOLLOW-UP RULES
+After every save_observation call, the backend returns a validation result in the tool response. This result is AUTHORITATIVE.
+1. If validation.status is "normal": acknowledge briefly (e.g. "Recorded.") and move to the next missing field.
+2. If validation.status is "out_of_range": clearly state the value is outside the configured operating range and ask for confirmation or correction. Example: "Pressure is outside the configured range. Can you confirm that reading?"
+3. If validation.status is "unknown": do not claim the value is safe or unsafe. Acknowledge and continue normally. Example: "Recorded. Next question..."
+4. NEVER calculate, invent, or guess operating limits or thresholds yourself. The backend provides them.
+5. NEVER say a reading is "dangerous", "critical", or "alarming" unless the backend explicitly says so.
+6. NEVER invent a replacement measurement for the technician.
+7. If the technician provides a corrected measurement after a follow-up, save it as a new observation. Do not re-send the original value.`;
+
 
 // ---------------------------------------------------------------------------
 // Greeting
@@ -220,6 +249,20 @@ export const TOOLS = [
         confidence: { type: "number", description: "Speech extraction confidence from 0 to 1, when available." },
       },
       required: ["field_name", "value"],
+    },
+  },
+  {
+    type: "function",
+    name: "complete_inspection",
+    description: "Complete the active inspection after the technician explicitly confirms they are finished. The application supplies the active inspection ID; do not invent or provide an inspection ID. Do not call this tool prematurely or without technician confirmation.",
+    parameters: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "string",
+          description: "An optional brief summary of the completed inspection findings.",
+        },
+      },
     },
   },
 ];

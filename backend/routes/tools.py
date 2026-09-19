@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 
 from services.inspection_service import InspectionServiceError
 from tools.equipment_tools import get_equipment_profile
-from tools.inspection_tools import save_observation_tool
+from tools.inspection_tools import complete_inspection_tool, save_observation_tool
 
 logger = logging.getLogger(__name__)
 
@@ -59,3 +59,26 @@ def save_observation_tool_endpoint():
 
     logger.info("[Tool] save_observation inspection_id=%s", inspection_id)
     return jsonify(result), 200 if result.get("duplicate") else 201
+
+
+@tools_bp.route("/api/tools/complete-inspection", methods=["POST"])
+def complete_inspection_tool_endpoint():
+    """Complete an active inspection requested by the voice session."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "error": "Request body must be a JSON object"}), 400
+
+    inspection_id = payload.get("inspection_id")
+    if isinstance(inspection_id, bool) or not isinstance(inspection_id, int) or inspection_id <= 0:
+        return jsonify({"success": False, "error": "inspection_id must be a positive integer"}), 400
+
+    try:
+        result = complete_inspection_tool(payload)
+    except InspectionServiceError as exc:
+        return jsonify({"success": False, "error": exc.message}), exc.status_code
+    except Exception:
+        logger.exception("[Tool] complete_inspection failed")
+        return jsonify({"success": False, "error": "Unable to complete inspection"}), 500
+
+    logger.info("[Tool] complete_inspection inspection_id=%s", inspection_id)
+    return jsonify(result), 200

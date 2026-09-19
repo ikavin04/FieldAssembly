@@ -56,7 +56,7 @@ registerProcessor("pcm-capture-processor", PcmCaptureProcessor);
 // ---------------------------------------------------------------------------
 
 export class VoiceAgent {
-  constructor() {
+  constructor(context = {}) {
     // WebSocket
     this._ws = null;
 
@@ -76,6 +76,9 @@ export class VoiceAgent {
     this._state = ConnectionState.DISCONNECTED;
     this._sessionReady = false;
     this._pendingToolResults = [];
+    this._latestUserTranscript = null;
+    this._activeInspectionId = context.inspectionId ?? null;
+    this._activeEquipment = context.equipment ?? null;
 
     // Callbacks
     this.onStateChange = null; // (newState) => {}
@@ -103,7 +106,14 @@ export class VoiceAgent {
    *  4. Wait for session.ready
    *  5. Start microphone
    */
-  async connect() {
+  async connect(context = {}) {
+    if (context.inspectionId !== undefined) this._activeInspectionId = context.inspectionId;
+    if (context.equipment !== undefined) this._activeEquipment = context.equipment;
+    if (!this._activeInspectionId) {
+      this._setState(ConnectionState.ERROR);
+      this.onError?.("An active inspection is required before starting voice");
+      return;
+    }
     if (this._state !== ConnectionState.DISCONNECTED && this._state !== ConnectionState.ERROR) {
       console.warn("[Voice] Already connected or connecting");
       return;
@@ -173,7 +183,10 @@ export class VoiceAgent {
   // -------------------------------------------------------------------------
 
   _sendSessionUpdate() {
-    const config = buildSessionConfig();
+    const config = buildSessionConfig({
+      inspectionId: this._activeInspectionId,
+      equipment: this._activeEquipment,
+    });
     this._ws.send(JSON.stringify(config));
     console.log("[Voice] session.update sent");
   }
@@ -223,6 +236,7 @@ export class VoiceAgent {
 
       case "transcript.user":
         console.log("[Voice] User transcript received");
+        this._latestUserTranscript = msg.text || "";
         this.onUserTranscript?.(msg.text || "");
         break;
 
@@ -250,7 +264,11 @@ export class VoiceAgent {
           this._pendingToolResults = [];
           break;
         }
+        const hasPendingToolResults = this._pendingToolResults.length > 0;
         this._sendPendingToolResults();
+        if (!hasPendingToolResults) {
+          this._returnToListeningAfterPlayback();
+        }
         // After audio finishes playing, state will return to LISTENING
         break;
 
@@ -284,8 +302,28 @@ export class VoiceAgent {
       return;
     }
 
+    const argumentsObject = { ...msg.arguments };
+    if (toolName === "save_observation" && !this._activeInspectionId) {
+      this._pendingToolResults.push({
+        callId,
+        result: Promise.resolve({ success: false, error: "No active inspection context" }),
+      });
+      return;
+    }
+    if (toolName === "save_observation") {
+      if (argumentsObject.inspection_id && Number(argumentsObject.inspection_id) !== Number(this._activeInspectionId)) {
+        console.warn("[Voice] Replacing mismatched inspection_id from tool call");
+      }
+      argumentsObject.inspection_id = Number(this._activeInspectionId);
+    }
+    if (toolName === "save_observation" && !argumentsObject.evidence_text && this._latestUserTranscript) {
+      argumentsObject.evidence_text = this._latestUserTranscript;
+      this._latestUserTranscript = null;
+    }
+
+    console.log("[Voice] Tool call arguments", toolName, argumentsObject);
     const toolPromise = Promise.resolve().then(() =>
-      executeVoiceTool(toolName, msg.arguments || {})
+      executeVoiceTool(toolName, argumentsObject)
     ).catch((err) => ({ success: false, error: err.message }));
 
     this._pendingToolResults.push({ callId, result: toolPromise });
@@ -310,6 +348,21 @@ export class VoiceAgent {
         result: JSON.stringify(result),
       }));
     }
+    this._setState(ConnectionState.THINKING);
+  }
+
+  _returnToListeningAfterPlayback() {
+    if (!this._playbackCtx) {
+      this._setState(ConnectionState.LISTENING);
+      return;
+    }
+
+    const remaining = Math.max(0, this._nextPlaybackTime - this._playbackCtx.currentTime);
+    window.setTimeout(() => {
+      if (this._state === ConnectionState.SPEAKING) {
+        this._setState(ConnectionState.LISTENING);
+      }
+    }, Math.ceil(remaining * 1000) + 100);
   }
 
   // -------------------------------------------------------------------------
@@ -499,6 +552,9 @@ export class VoiceAgent {
     }
 
     this._sessionReady = false;
+    this._latestUserTranscript = null;
+    this._activeInspectionId = null;
+    this._activeEquipment = null;
     this._setState(ConnectionState.DISCONNECTED);
   }
 }

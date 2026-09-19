@@ -208,11 +208,10 @@ export const TOOLS = [
   {
     type: "function",
     name: "save_observation",
-    description: "Save a factual observation provided by the technician during the active inspection. Do not use this tool for invented values or unrelated fields.",
+    description: "Save a factual observation provided by the technician during the active inspection. The application supplies the active inspection ID; do not invent or provide an inspection ID. Do not use this tool for invented values or unrelated fields.",
     parameters: {
       type: "object",
       properties: {
-        inspection_id: { type: "integer", description: "The active inspection database ID." },
         field_name: { type: "string", description: "The required inspection field being observed." },
         value: { type: "string", description: "The factual value reported by the technician." },
         unit: { type: "string", description: "The reported unit, when applicable." },
@@ -220,7 +219,7 @@ export const TOOLS = [
         source_timestamp: { type: "number", description: "Source audio timestamp in seconds, when available." },
         confidence: { type: "number", description: "Speech extraction confidence from 0 to 1, when available." },
       },
-      required: ["inspection_id", "field_name", "value"],
+      required: ["field_name", "value"],
     },
   },
 ];
@@ -229,9 +228,15 @@ export const TOOLS = [
 // Build the full session.update payload
 // ---------------------------------------------------------------------------
 
-export function buildSessionConfig() {
+export function buildSessionConfig(context = {}) {
+  const contextLines = [
+    context.inspectionId ? `Current active inspection ID: ${context.inspectionId}.` : "",
+    context.equipment?.asset_code ? `Current equipment asset: ${context.equipment.asset_code}.` : "",
+    context.equipment?.name ? `Current equipment name: ${context.equipment.name}.` : "",
+    "All observations in this voice session belong to the current active inspection.",
+  ].filter(Boolean).join(" ");
   const session = {
-    system_prompt: SYSTEM_PROMPT,
+    system_prompt: `${SYSTEM_PROMPT}\n\nACTIVE SESSION CONTEXT\n${contextLines}`,
     greeting: GREETING,
     input: {
       turn_detection: TURN_DETECTION,

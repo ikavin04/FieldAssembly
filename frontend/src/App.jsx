@@ -10,7 +10,8 @@ const navItems = [
 ]
 
 function App() {
-  const [path, setPath] = useState(window.location.pathname)
+  const currentLocation = () => `${window.location.pathname}${window.location.search}`
+  const [path, setPath] = useState(currentLocation)
   const [equipment, setEquipment] = useState([])
   const [equipmentState, setEquipmentState] = useState('loading')
   const [backendState, setBackendState] = useState('checking')
@@ -26,7 +27,7 @@ function App() {
   }, [path])
 
   useEffect(() => {
-    const onPopState = () => setPath(window.location.pathname)
+    const onPopState = () => setPath(currentLocation())
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
@@ -134,7 +135,40 @@ function EquipmentPage({ navigate, equipment, state }) {
 
 function EquipmentCard({ item, navigate }) { const checkpoints = Array.isArray(item.required_inspection_fields) ? item.required_inspection_fields.length : 0; return <article className="equipment-card"><div className="card-kicker"><span>{item.asset_code}</span><span className="type-tag">{item.equipment_type}</span></div><h3>{item.name}</h3><p className="muted">{item.location || 'Location not provided'}</p><div className="card-divider" /><div className="equipment-meta"><span>{checkpoints} required checkpoints</span><button className="text-button" onClick={() => navigate(`/inspection/new?equipment=${item.id}`)}>Inspect ↗</button></div><details><summary>View details</summary><div className="details-copy"><p>{item.description || 'No description provided.'}</p><strong>Operating limits</strong><code>{JSON.stringify(item.operating_limits || {})}</code></div></details></article> }
 
-function InspectionPage({ navigate, equipment, path }) { const params = new URLSearchParams(path.split('?')[1] || ''); const selected = equipment.find((item) => String(item.id) === params.get('equipment')); return <div className="page-body inspection-page"><div className="inspection-context"><div><p className="eyebrow">Inspection workspace / {selected?.asset_code || 'new session'}</p><h2>{selected?.name || 'Select an equipment asset'}</h2><p className="muted">{selected?.location || 'Equipment context will be attached when you start from the catalog.'}</p></div><span className="status-badge">Ready to begin</span></div><div className="inspection-layout"><div><VoiceTestPanel /><button className="complete-button" onClick={() => navigate('/inspection/new/result')}>Complete inspection →</button></div><aside className="checklist-panel"><p className="eyebrow">Required fields</p><h3>Inspection checklist</h3>{(selected?.required_inspection_fields || []).map((field) => <div className="checklist-item" key={typeof field === 'string' ? field : JSON.stringify(field)}><span>○</span><span>{typeof field === 'string' ? field : field.name || field.field_name || 'Required observation'}</span></div>)}{!selected && <EmptyState title="Waiting for equipment" text="Start from Equipment to load the backend-defined checkpoints." />}</aside></div></div> }
+function InspectionPage({ navigate, equipment, path }) {
+  const params = new URLSearchParams(path.split('?')[1] || '')
+  const routeId = path.split('/')[2]?.split('?')[0]
+  const selected = equipment.find((item) => String(item.id) === params.get('equipment'))
+  const [activeInspectionId, setActiveInspectionId] = useState(routeId && routeId !== 'new' ? Number(routeId) : null)
+  const [inspectionState, setInspectionState] = useState(routeId === 'new' ? 'creating' : 'ready')
+
+  useEffect(() => {
+    if (routeId !== 'new' || !selected || activeInspectionId) return
+    let cancelled = false
+    fetch('/api/inspections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ equipment_id: selected.id, inspection_type: 'routine' }),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('Unable to create inspection')
+        return response.json()
+      })
+      .then((payload) => {
+        if (cancelled) return
+        setActiveInspectionId(payload.inspection_id)
+        setInspectionState('ready')
+        window.history.replaceState({}, '', `/inspection/${payload.inspection_id}?equipment=${selected.id}`)
+      })
+      .catch(() => {
+        if (!cancelled) setInspectionState('error')
+      })
+    return () => { cancelled = true }
+  }, [routeId, selected, activeInspectionId])
+
+  const statusText = inspectionState === 'creating' ? 'Creating inspection' : inspectionState === 'error' ? 'Inspection unavailable' : activeInspectionId ? `Inspection #${activeInspectionId}` : 'Select an equipment asset'
+  return <div className="page-body inspection-page"><div className="inspection-context"><div><p className="eyebrow">Inspection workspace / {selected?.asset_code || 'new session'}</p><h2>{selected?.name || 'Select an equipment asset'}</h2><p className="muted">{selected?.location || 'Equipment context will be attached when you start from the catalog.'}</p></div><span className="status-badge">{statusText}</span></div><div className="inspection-layout"><div><VoiceTestPanel inspectionId={activeInspectionId} equipment={selected} /><button className="complete-button" onClick={() => navigate(`/inspection/${activeInspectionId || 'new'}/result`)}>Complete inspection →</button></div><aside className="checklist-panel"><p className="eyebrow">Required fields</p><h3>Inspection checklist</h3>{(selected?.required_inspection_fields || []).map((field) => <div className="checklist-item" key={typeof field === 'string' ? field : JSON.stringify(field)}><span>○</span><span>{typeof field === 'string' ? field : field.name || field.field_name || 'Required observation'}</span></div>)}{!selected && <EmptyState title="Waiting for equipment" text="Start from Equipment to load the backend-defined checkpoints." />}</aside></div></div>
+}
 
 function ResultPage({ navigate }) { return <div className="page-body"><section className="result-banner"><div><span className="success-mark">✓</span><div><p className="eyebrow">Inspection complete</p><h2>Your record is ready to review.</h2><p className="muted">This result view will populate from the inspection and observation APIs.</p></div></div><button className="primary-cta" onClick={() => navigate('/reports/new')}>View report ↗</button></section><div className="result-grid"><div className="section-block"><div className="section-heading"><h2>Observations</h2><span className="status-badge neutral">Awaiting data</span></div><EmptyState title="No observations captured" text="Voice observations and spoken evidence will appear here after the backend creates an inspection." /></div><div className="section-block"><div className="section-heading"><h2>Evidence timeline</h2></div><EmptyState title="No evidence yet" text="Every saved observation will retain its original spoken evidence." /></div></div><button className="secondary-cta" onClick={() => navigate('/equipment')}>Start another inspection</button></div> }
 

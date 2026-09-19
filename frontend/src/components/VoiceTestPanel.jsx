@@ -6,7 +6,7 @@ import { VoiceAgent, ConnectionState } from "../services/voiceAgent";
  *
  * Shows connection state, user/agent transcripts, and connect/disconnect controls.
  */
-export default function VoiceTestPanel() {
+export default function VoiceTestPanel({ inspectionId, equipment }) {
   const [connState, setConnState] = useState(ConnectionState.DISCONNECTED);
   const [transcripts, setTranscripts] = useState([]); // {role, text, partial}
   const [error, setError] = useState(null);
@@ -15,7 +15,7 @@ export default function VoiceTestPanel() {
   // Lazily create the VoiceAgent instance
   const getAgent = useCallback(() => {
     if (!agentRef.current) {
-      agentRef.current = new VoiceAgent();
+      agentRef.current = new VoiceAgent({ inspectionId, equipment });
     }
     return agentRef.current;
   }, []);
@@ -76,12 +76,12 @@ export default function VoiceTestPanel() {
     return () => {
       agent.disconnect();
     };
-  }, [getAgent]);
+  }, [getAgent, inspectionId, equipment]);
 
   const handleConnect = () => {
     setError(null);
     setTranscripts([]);
-    getAgent().connect();
+    getAgent().connect({ inspectionId, equipment });
   };
 
   const handleDisconnect = () => {

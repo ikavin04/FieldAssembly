@@ -2,15 +2,20 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { VoiceAgent, ConnectionState } from "../services/voiceAgent";
 
 /**
- * VoiceTestPanel — Minimal test UI for Step 3 voice pipeline verification.
+ * VoiceTestPanel — Minimalist, theme-aligned Voice Assistant component.
  *
- * Shows connection state, user/agent transcripts, and connect/disconnect controls.
+ * Designed to seamlessly blend with the warm editorial FieldVoice aesthetic:
+ * - Clean white card with subtle warm borders and soft elevation
+ * - Real-time state pill with subtle pulse feedback
+ * - Forest green primary CTA matching the workspace theme
+ * - Elegant, legible transcript stream with role-based message bubbles
  */
 export default function VoiceTestPanel({ inspectionId, equipment }) {
   const [connState, setConnState] = useState(ConnectionState.DISCONNECTED);
   const [transcripts, setTranscripts] = useState([]); // {role, text, partial}
   const [error, setError] = useState(null);
   const agentRef = useRef(null);
+  const transcriptEndRef = useRef(null);
 
   // Lazily create the VoiceAgent instance
   const getAgent = useCallback(() => {
@@ -18,7 +23,7 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
       agentRef.current = new VoiceAgent({ inspectionId, equipment });
     }
     return agentRef.current;
-  }, []);
+  }, [inspectionId, equipment]);
 
   // Wire up callbacks once
   useEffect(() => {
@@ -38,7 +43,6 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
 
     agent.onUserTranscript = (text) => {
       setTranscripts((prev) => {
-        // Replace the last partial user entry with the final version
         const last = prev[prev.length - 1];
         if (last && last.role === "user" && last.partial) {
           return [...prev.slice(0, -1), { role: "user", text, partial: false }];
@@ -78,6 +82,11 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
     };
   }, [getAgent, inspectionId, equipment]);
 
+  // Smooth scroll to bottom when new transcript lines arrive
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [transcripts]);
+
   const handleConnect = () => {
     setError(null);
     setTranscripts([]);
@@ -90,181 +99,128 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
 
   const isActive = connState !== ConnectionState.DISCONNECTED && connState !== ConnectionState.ERROR;
 
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.title}>🎙️ FieldVoice — Voice Pipeline Test</h2>
+  const statusMeta = getStatusMeta(connState);
 
-      {/* Status */}
-      <div style={styles.status}>
-        <span style={styles.statusLabel}>Status:</span>
-        <span style={{ ...styles.statusValue, color: stateColor(connState) }}>
-          {connState}
-        </span>
+  return (
+    <div className="voice-panel-card">
+      {/* Header */}
+      <div className="voice-panel-header">
+        <div className="voice-panel-title-wrap">
+          <p className="eyebrow">Voice Assistant</p>
+          <h2>Hands-free capture</h2>
+        </div>
+        <div className={`voice-panel-status-pill ${statusMeta.className}`}>
+          <span className="voice-status-dot" />
+          <span>{statusMeta.label}</span>
+        </div>
       </div>
 
-      {/* Error */}
-      {error && <div style={styles.error}>⚠️ {error}</div>}
+      {/* Error alert */}
+      {error && (
+        <div className="voice-panel-error" role="alert">
+          <span>⚠️</span>
+          <span>{error}</span>
+        </div>
+      )}
 
-      {/* Controls */}
-      <div style={styles.controls}>
+      {/* Action Controls & Visualizer */}
+      <div className="voice-panel-controls">
         {!isActive ? (
-          <button style={styles.btnConnect} onClick={handleConnect}>
-            🔌 Connect &amp; Start Voice
+          <button className="voice-btn-connect" onClick={handleConnect}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+            <span>Connect &amp; Start Voice</span>
           </button>
         ) : (
-          <button style={styles.btnDisconnect} onClick={handleDisconnect}>
-            ✋ Disconnect
-          </button>
-        )}
-      </div>
-
-      {/* Transcript */}
-      <div style={styles.transcriptBox}>
-        <h3 style={styles.transcriptTitle}>Conversation</h3>
-        {transcripts.length === 0 && (
-          <p style={styles.placeholder}>Transcripts will appear here...</p>
-        )}
-        {transcripts.map((t, i) => (
-          <div key={i} style={styles.transcriptEntry}>
-            <span style={{ ...styles.role, color: t.role === "user" ? "#60a5fa" : t.role === "agent" ? "#34d399" : "#9ca3af" }}>
-              {t.role === "user" ? "You" : t.role === "agent" ? "FieldVoice" : "System"}:
-            </span>
-            <span style={{ ...styles.text, opacity: t.partial ? 0.6 : 1 }}>
-              {t.text}
-              {t.partial && <span style={styles.typing}>…</span>}
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div className="voice-active-indicator">
+              <div className="voice-wave-bars">
+                <span className="wave-bar" />
+                <span className="wave-bar" />
+                <span className="wave-bar" />
+                <span className="wave-bar" />
+                <span className="wave-bar" />
+              </div>
+              <span>{statusMeta.tip}</span>
+            </div>
+            <button className="voice-btn-disconnect" onClick={handleDisconnect}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+              </svg>
+              <span>Disconnect</span>
+            </button>
           </div>
-        ))}
+        )}
       </div>
 
-      {/* State legend */}
-      <div style={styles.legend}>
-        <small>
-          {connState === ConnectionState.LISTENING && "🎤 Listening — speak now"}
-          {connState === ConnectionState.THINKING && "🤔 Agent is thinking..."}
-          {connState === ConnectionState.SPEAKING && "🔊 Agent is speaking"}
-          {connState === ConnectionState.CONNECTING && "⏳ Connecting..."}
-          {connState === ConnectionState.WAITING_FOR_SESSION && "⏳ Waiting for session..."}
-        </small>
+      {/* Transcript Box */}
+      <div className="voice-transcript-box">
+        <div className="voice-transcript-header">
+          <span>Conversation Transcript</span>
+          <span>{transcripts.length > 0 ? `${transcripts.length} entries` : "Live feed"}</span>
+        </div>
+
+        {transcripts.length === 0 ? (
+          <div className="voice-transcript-empty">
+            <div className="empty-mic-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
+            </div>
+            <p>
+              {isActive
+                ? "Listening... speak observations naturally, like “Temperature is 74 degrees” or “Pressure looks normal”."
+                : "Click “Connect & Start Voice” to begin speaking with FieldVoice."}
+            </p>
+          </div>
+        ) : (
+          transcripts.map((t, i) => (
+            <div key={i} className={`voice-bubble ${t.role}`}>
+              {t.role !== "system" && (
+                <div className="voice-bubble-meta">
+                  <span>{t.role === "user" ? "You" : "FieldVoice"}</span>
+                </div>
+              )}
+              <div className="voice-bubble-text" style={{ opacity: t.partial ? 0.75 : 1 }}>
+                {t.text}
+                {t.partial && <span className="voice-typing-dots">…</span>}
+              </div>
+            </div>
+          ))
+        )}
+        <div ref={transcriptEndRef} />
       </div>
+
+      {/* Footer Helper */}
+      <p className="voice-panel-tips">
+        <span style={{ color: "#2f6558" }}>∿</span>
+        <span>Voice assistant automatically records observations and validates operating limits in real time.</span>
+      </p>
     </div>
   );
 }
 
-function stateColor(state) {
+function getStatusMeta(state) {
   switch (state) {
-    case ConnectionState.LISTENING: return "#34d399";
-    case ConnectionState.SPEAKING: return "#fbbf24";
-    case ConnectionState.THINKING: return "#a78bfa";
+    case ConnectionState.LISTENING:
+      return { label: "Listening", tip: "Listening... speak now", className: "listening" };
+    case ConnectionState.SPEAKING:
+      return { label: "Speaking", tip: "Agent is speaking...", className: "speaking" };
+    case ConnectionState.THINKING:
+      return { label: "Thinking", tip: "Analyzing observation...", className: "thinking" };
     case ConnectionState.CONNECTING:
+    case ConnectionState.WAITING_FOR_SESSION:
+      return { label: "Connecting", tip: "Establishing voice session...", className: "connecting" };
     case ConnectionState.CONNECTED:
-    case ConnectionState.WAITING_FOR_SESSION: return "#60a5fa";
-    case ConnectionState.ERROR: return "#f87171";
-    default: return "#9ca3af";
+      return { label: "Connected", tip: "Voice session active", className: "connected" };
+    case ConnectionState.ERROR:
+      return { label: "Issue", tip: "Connection error", className: "error" };
+    default:
+      return { label: "Ready to connect", tip: "Click connect to begin", className: "disconnected" };
   }
 }
-
-const styles = {
-  container: {
-    maxWidth: 600,
-    margin: "2rem auto",
-    padding: "1.5rem",
-    backgroundColor: "#111827",
-    borderRadius: 12,
-    border: "1px solid #1f2937",
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-    color: "#e5e7eb",
-  },
-  title: {
-    margin: "0 0 1rem",
-    fontSize: "1.25rem",
-    fontWeight: 600,
-  },
-  status: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: "0.75rem",
-  },
-  statusLabel: {
-    fontSize: "0.875rem",
-    color: "#9ca3af",
-  },
-  statusValue: {
-    fontSize: "0.875rem",
-    fontWeight: 600,
-    fontFamily: "monospace",
-  },
-  error: {
-    padding: "0.5rem 0.75rem",
-    backgroundColor: "#7f1d1d",
-    borderRadius: 8,
-    fontSize: "0.875rem",
-    marginBottom: "0.75rem",
-  },
-  controls: {
-    display: "flex",
-    gap: 8,
-    marginBottom: "1rem",
-  },
-  btnConnect: {
-    padding: "0.5rem 1.25rem",
-    backgroundColor: "#059669",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontWeight: 600,
-    fontSize: "0.875rem",
-  },
-  btnDisconnect: {
-    padding: "0.5rem 1.25rem",
-    backgroundColor: "#dc2626",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontWeight: 600,
-    fontSize: "0.875rem",
-  },
-  transcriptBox: {
-    backgroundColor: "#0d1117",
-    borderRadius: 8,
-    padding: "1rem",
-    minHeight: 200,
-    maxHeight: 400,
-    overflowY: "auto",
-    marginBottom: "0.75rem",
-  },
-  transcriptTitle: {
-    margin: "0 0 0.5rem",
-    fontSize: "0.875rem",
-    color: "#6b7280",
-    fontWeight: 500,
-  },
-  placeholder: {
-    color: "#4b5563",
-    fontSize: "0.875rem",
-    fontStyle: "italic",
-  },
-  transcriptEntry: {
-    marginBottom: "0.5rem",
-    lineHeight: 1.5,
-  },
-  role: {
-    fontWeight: 600,
-    marginRight: 6,
-    fontSize: "0.875rem",
-  },
-  text: {
-    fontSize: "0.875rem",
-  },
-  typing: {
-    animation: "pulse 1s infinite",
-  },
-  legend: {
-    textAlign: "center",
-    color: "#6b7280",
-    fontSize: "0.75rem",
-  },
-};

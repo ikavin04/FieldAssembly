@@ -74,7 +74,7 @@ function App() {
             <div className="sidebar-header">
               <button className="brand-mark" onClick={() => navigate('/')} aria-label="FieldVoice home">
                 <span className="brand-dot" />
-                <span>fieldvoice</span>
+                <span className="brand-name">fieldvoice</span>
               </button>
               <button
                 className="mobile-sidebar-close"
@@ -92,13 +92,17 @@ function App() {
                   key={item.href}
                   onClick={() => navigate(item.href)}
                 >
-                  <span>{item.index}</span>{item.label}
+                  <span className="nav-index">{item.index}</span>
+                  <span className="nav-label">{item.label}</span>
                 </button>
               ))}
             </nav>
             <div className="sidebar-footer">
               <div className="user-avatar">JM</div>
-              <div><strong>Jordan Mills</strong><small>Field technician</small></div>
+              <div className="user-info">
+                <strong className="user-name">Jordan Mills</strong>
+                <small className="user-role">Field technician</small>
+              </div>
               <button className="icon-button" aria-label="Open account menu">•••</button>
             </div>
           </aside>
@@ -111,6 +115,7 @@ function App() {
             backendState={backendState}
             mobileMenuOpen={mobileMenuOpen}
             onToggleMenu={() => setMobileMenuOpen(!mobileMenuOpen)}
+            navigate={navigate}
           />
         )}
         {page === 'landing' && <LandingPage navigate={navigate} />}
@@ -138,13 +143,23 @@ function getPage(path) {
   return 'dashboard'
 }
 
-function AppHeader({ path, backendState, mobileMenuOpen, onToggleMenu }) {
-  const labels = { dashboard: 'Dashboard', equipment: 'Equipment', inspection: 'Inspection', result: 'Inspection result', tickets: 'Tickets', alerts: 'Safety alerts', reports: 'Report' }
+function AppHeader({ path, backendState, mobileMenuOpen, onToggleMenu, navigate }) {
+  const labels = {
+    dashboard: 'Dashboard',
+    equipment: 'Equipment',
+    inspection: 'Inspection',
+    result: 'Inspection result',
+    tickets: 'Tickets',
+    alerts: 'Safety alerts',
+    reports: 'Reports',
+  }
   const key = path.split('/')[1] || 'dashboard'
-  const statusText = backendState === 'connected' ? 'Backend connected' : backendState === 'unavailable' ? 'Backend unavailable' : 'Checking backend'
+  const pageName = labels[key] || 'FieldVoice'
+  const statusText = backendState === 'connected' ? 'Connected' : backendState === 'unavailable' ? 'Unavailable' : 'Checking'
+
   return (
     <header className="topbar">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="topbar-left">
         <button
           className="mobile-menu-toggle"
           onClick={onToggleMenu}
@@ -153,9 +168,13 @@ function AppHeader({ path, backendState, mobileMenuOpen, onToggleMenu }) {
         >
           {mobileMenuOpen ? '✕' : '☰'}
         </button>
-        <div>
-          <p className="eyebrow">Field operations / {labels[key] || 'FieldVoice'}</p>
-          <h1>{labels[key] || 'FieldVoice'}</h1>
+        <div className="topbar-titles">
+          <button className="topbar-brand-link" onClick={() => navigate('/')} aria-label="FieldVoice home">
+            <span className="brand-dot" />
+            <span className="topbar-brand-name">FieldVoice</span>
+          </button>
+          <span className="topbar-separator">/</span>
+          <span className="topbar-current-page">{pageName}</span>
         </div>
       </div>
       <div className="topbar-actions">
@@ -167,15 +186,11 @@ function AppHeader({ path, backendState, mobileMenuOpen, onToggleMenu }) {
 }
 
 function LandingPage({ navigate }) {
-  const [landingMenuOpen, setLandingMenuOpen] = useState(false)
-
   const handleNav = (href) => {
-    setLandingMenuOpen(false)
     navigate(href)
   }
 
   const handleScrollTo = (id) => {
-    setLandingMenuOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
 
@@ -186,15 +201,7 @@ function LandingPage({ navigate }) {
           <span className="brand-wave">∿</span>
           <span>FieldVoice</span>
         </button>
-        <button
-          className="mobile-menu-toggle landing-toggle"
-          onClick={() => setLandingMenuOpen(!landingMenuOpen)}
-          aria-label={landingMenuOpen ? "Close navigation menu" : "Open navigation menu"}
-          aria-expanded={landingMenuOpen}
-        >
-          {landingMenuOpen ? '✕' : '☰'}
-        </button>
-        <nav className={`landing-nav-links ${landingMenuOpen ? 'mobile-open' : ''}`}>
+        <nav className="landing-nav-links">
           <button onClick={() => handleScrollTo('how-it-works')}>How it works</button>
           <button onClick={() => handleScrollTo('for-technicians')}>For technicians</button>
           <button onClick={() => handleNav('/dashboard')}>Open workspace</button>

@@ -94,7 +94,21 @@ After every save_observation call, the backend returns a validation result in th
 4. NEVER calculate, invent, or guess operating limits or thresholds yourself. The backend provides them.
 5. NEVER say a reading is "dangerous", "critical", or "alarming" unless the backend explicitly says so.
 6. NEVER invent a replacement measurement for the technician.
-7. If the technician provides a corrected measurement after a follow-up, save it as a new observation. Do not re-send the original value.`;
+7. If the technician provides a corrected measurement after a follow-up, save it as a new observation. Do not re-send the original value.
+
+MAINTENANCE TICKETS & SAFETY ALERTS
+1. MAINTENANCE TICKETS:
+   - The backend is authoritative.
+   - Use the create_maintenance_ticket tool only when the inspection evidence warrants maintenance action (e.g. an observation is confirmed out_of_range) or when the technician explicitly requests a maintenance ticket.
+   - Do not invent ticket IDs, priorities, equipment, or reasons.
+   - Do not claim a ticket exists until the tool succeeds.
+
+2. SAFETY ALERTS:
+   - Never independently classify something as safety-critical based on intuition.
+   - Use backend-provided information and explicit tool behavior.
+   - Do not invent severity.
+   - Do not claim an alert was created until the tool succeeds.
+   - The agent should remain concise and technician-oriented.`;
 
 
 // ---------------------------------------------------------------------------
@@ -263,6 +277,50 @@ export const TOOLS = [
           description: "An optional brief summary of the completed inspection findings.",
         },
       },
+    },
+  },
+  {
+    type: "function",
+    name: "create_maintenance_ticket",
+    description: "Create a maintenance ticket for an issue identified during the active inspection. The application supplies the active inspection ID; do not invent or provide an inspection ID. Use this tool only when the inspection evidence warrants maintenance action (e.g. out_of_range readings) or when the technician explicitly requests a maintenance ticket.",
+    parameters: {
+      type: "object",
+      properties: {
+        issue: {
+          type: "string",
+          description: "Clear, factual description of the maintenance issue or equipment defect.",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "critical"],
+          description: "Priority of the maintenance ticket. Default to medium unless the issue is urgent.",
+        },
+      },
+      required: ["issue"],
+    },
+  },
+  {
+    type: "function",
+    name: "create_safety_alert",
+    description: "Create a safety alert for an immediate hazard or safety condition identified during the active inspection. The application supplies the active inspection ID; do not invent or provide an inspection ID. Use this tool only when supported by factual evidence or explicit technician safety report.",
+    parameters: {
+      type: "object",
+      properties: {
+        hazard: {
+          type: "string",
+          description: "Clear, factual description of the hazard (e.g. extreme overpressure, gas leak, smoke).",
+        },
+        severity: {
+          type: "string",
+          enum: ["low", "medium", "high", "critical"],
+          description: "Severity of the safety alert.",
+        },
+        evidence_text: {
+          type: "string",
+          description: "Direct spoken statement or observation evidence supporting this safety alert.",
+        },
+      },
+      required: ["hazard"],
     },
   },
 ];

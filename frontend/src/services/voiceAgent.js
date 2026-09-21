@@ -90,6 +90,8 @@ export class VoiceAgent {
     this.onSessionEnded = null; // () => {}
     this.onObservationSaved = null; // (result) => {}
     this.onInspectionCompleted = null; // (result) => {}
+    this.onTicketCreated = null; // (result) => {}
+    this.onAlertCreated = null; // (result) => {}
   }
 
 
@@ -306,14 +308,15 @@ export class VoiceAgent {
     }
 
     const argumentsObject = { ...msg.arguments };
-    if ((toolName === "save_observation" || toolName === "complete_inspection") && !this._activeInspectionId) {
+    const inspectionTools = ["save_observation", "complete_inspection", "create_maintenance_ticket", "create_safety_alert"];
+    if (inspectionTools.includes(toolName) && !this._activeInspectionId) {
       this._pendingToolResults.push({
         callId,
         result: Promise.resolve({ success: false, error: "No active inspection context" }),
       });
       return;
     }
-    if (toolName === "save_observation" || toolName === "complete_inspection") {
+    if (inspectionTools.includes(toolName)) {
       if (argumentsObject.inspection_id && Number(argumentsObject.inspection_id) !== Number(this._activeInspectionId)) {
         console.warn("[Voice] Replacing mismatched inspection_id from tool call");
       }
@@ -332,6 +335,12 @@ export class VoiceAgent {
       }
       if (toolName === "complete_inspection" && res?.success) {
         this.onInspectionCompleted?.(res);
+      }
+      if (toolName === "create_maintenance_ticket" && res?.success) {
+        this.onTicketCreated?.(res);
+      }
+      if (toolName === "create_safety_alert" && res?.success) {
+        this.onAlertCreated?.(res);
       }
       return res;
     }).catch((err) => ({ success: false, error: err.message }));

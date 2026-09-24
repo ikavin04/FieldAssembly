@@ -17,6 +17,7 @@ Covers:
 14. Step 8 regression: 16/16 maintenance ticket & safety alert tests passing.
 """
 
+import os
 import subprocess
 import sys
 import traceback
@@ -252,8 +253,10 @@ def run_tests():
 
 	# 13. Step 7 regression: python test_step7_validation.py
 	print("\n--- Running Step 7 Regression Test Suite ---")
+	script_dir = os.path.dirname(os.path.abspath(__file__))
 	res_step7 = subprocess.run(
-		[sys.executable, "test_step7_validation.py"],
+		[sys.executable, os.path.join(script_dir, "test_step7_validation.py")],
+		cwd=script_dir,
 		capture_output=True,
 		text=True,
 	)
@@ -267,7 +270,8 @@ def run_tests():
 	# 14. Step 8 regression: python test_step8_tickets_alerts.py
 	print("\n--- Running Step 8 Regression Test Suite ---")
 	res_step8 = subprocess.run(
-		[sys.executable, "test_step8_tickets_alerts.py"],
+		[sys.executable, os.path.join(script_dir, "test_step8_tickets_alerts.py")],
+		cwd=script_dir,
 		capture_output=True,
 		text=True,
 	)

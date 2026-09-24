@@ -916,7 +916,126 @@ body { background: #f7f5f0; color: #111827; }
   line-height: 1.5;
 }
 
+.voice-tab-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #eeece7;
+  padding: 3px;
+  border-radius: 8px;
+}
+
+.voice-tab-btn {
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: #738071;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.voice-tab-btn:hover {
+  color: #111827;
+}
+
+.voice-tab-btn.active {
+  background: #ffffff;
+  color: #111827;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.voice-activity-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voice-activity-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-left: 3px solid #738071;
+  border-radius: 4px 8px 8px 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.voice-activity-item.act-badge-success {
+  border-left-color: #2f6558;
+}
+
+.voice-activity-item.act-badge-warning {
+  border-left-color: #b45309;
+  background: #fdfbf7;
+}
+
+.voice-activity-item.act-badge-pending {
+  border-left-color: #4b6b61;
+}
+
+.voice-activity-item.act-badge-error {
+  border-left-color: #b91c1c;
+  background: #fef2f2;
+}
+
+.voice-activity-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-activity-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: #7a8490;
+}
+
+.voice-activity-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eeece7;
+  color: #4a5568;
+  letter-spacing: 0.04em;
+}
+
+.voice-activity-badge.act-badge-success {
+  background: #eef5f1;
+  color: #2f6558;
+}
+
+.voice-activity-badge.act-badge-warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.voice-activity-badge.act-badge-pending {
+  background: #e6edea;
+  color: #38594f;
+}
+
+.voice-activity-badge.act-badge-error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.voice-activity-message {
+  font-size: 12px;
+  color: #1f2937;
+  line-height: 1.45;
+}
+
 @media print {
+
   .sidebar, .topbar, .report-actions, .mobile-menu-toggle, .mobile-backdrop {
     display: none !important;
   }

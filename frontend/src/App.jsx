@@ -483,6 +483,22 @@ function InspectionPage({ navigate, equipment, path }) {
     }
   }
 
+  const handleObservationSaved = () => {
+    if (!activeInspectionId) return
+    fetch(`/api/inspections/${activeInspectionId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setInspectionData(data)
+      })
+      .catch(() => {})
+  }
+
+  const handleVoiceInspectionCompleted = () => {
+    if (activeInspectionId) {
+      navigate(`/inspection/${activeInspectionId}/result`)
+    }
+  }
+
   // Derive checklist items: prefer inspectionData.required_fields from backend, fallback to equipment fields
   const checklistFields = inspectionData?.required_fields || selected?.required_inspection_fields || []
   const completedFields = inspectionData?.completed_fields || []
@@ -501,7 +517,13 @@ function InspectionPage({ navigate, equipment, path }) {
       </div>
       <div className="inspection-layout">
         <div>
-          <VoiceTestPanel inspectionId={activeInspectionId} equipment={selected} />
+          <VoiceTestPanel
+            inspectionId={activeInspectionId}
+            equipment={selected}
+            onObservationSaved={handleObservationSaved}
+            onInspectionCompleted={handleVoiceInspectionCompleted}
+          />
+
           <button
             className="complete-button"
             disabled={isCompleting || !activeInspectionId}

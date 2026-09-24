@@ -62,9 +62,14 @@ export function generateInspectionReport(inspectionId) {
   });
 }
 
+export function getInspectionStatus(inspectionId) {
+  return requestJson(`/api/inspections/${inspectionId}`);
+}
+
 export function executeVoiceTool(name, argumentsObject) {
   const endpoints = {
     get_equipment_profile: "/api/tools/get-equipment-profile",
+    get_inspection_status: "/api/tools/get-inspection-status",
     save_observation: "/api/tools/save-observation",
     complete_inspection: "/api/tools/complete-inspection",
     create_maintenance_ticket: "/api/tools/create-maintenance-ticket",
@@ -77,3 +82,4 @@ export function executeVoiceTool(name, argumentsObject) {
     body: JSON.stringify(argumentsObject),
   });
 }
+

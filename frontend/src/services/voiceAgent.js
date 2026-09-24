@@ -92,7 +92,9 @@ export class VoiceAgent {
     this.onInspectionCompleted = null; // (result) => {}
     this.onTicketCreated = null; // (result) => {}
     this.onAlertCreated = null; // (result) => {}
+    this.onActivityEvent = null; // (event) => {}
   }
+
 
 
   // -------------------------------------------------------------------------
@@ -200,6 +202,18 @@ export class VoiceAgent {
   // Incoming message handler
   // -------------------------------------------------------------------------
 
+  _emitActivity(type, message, status = "completed", metadata = {}) {
+    const event = {
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      type,    // 'speech' | 'tool_call' | 'tool_result' | 'validation' | 'action' | 'system' | 'error'
+      status,  // 'pending' | 'completed' | 'warning' | 'error'
+      message,
+      metadata,
+    };
+    this.onActivityEvent?.(event);
+  }
+
   _handleMessage(event) {
     let msg;
     try {
@@ -215,6 +229,7 @@ export class VoiceAgent {
         this._sessionReady = true;
         this._setState(ConnectionState.LISTENING);
         this._startMicrophone();
+        this._emitActivity("system", "Voice assistant ready (listening)", "completed");
         break;
 
       case "session.updated":
@@ -243,6 +258,7 @@ export class VoiceAgent {
         console.log("[Voice] User transcript received");
         this._latestUserTranscript = msg.text || "";
         this.onUserTranscript?.(msg.text || "");
+        this._emitActivity("speech", msg.text || "", "completed", { role: "user" });
         break;
 
       case "reply.started":
@@ -261,6 +277,7 @@ export class VoiceAgent {
       case "transcript.agent":
         console.log("[Voice] Agent transcript received");
         this.onAgentTranscript?.(msg.text || "");
+        this._emitActivity("speech", msg.text || "", "completed", { role: "agent" });
         break;
 
       case "reply.done":
@@ -284,11 +301,13 @@ export class VoiceAgent {
       case "session.error":
         console.error("[Voice] Session error:", msg.error || msg);
         this._setState(ConnectionState.ERROR);
+        this._emitActivity("error", msg.error?.message || msg.error || "Session error", "error");
         this.onError?.(msg.error?.message || msg.error || "Session error");
         break;
 
       case "session.ended":
         console.log("[Voice] Session ended");
+        this._emitActivity("system", "Voice session ended", "completed");
         this.onSessionEnded?.();
         this._cleanup();
         break;
@@ -308,8 +327,15 @@ export class VoiceAgent {
     }
 
     const argumentsObject = { ...msg.arguments };
-    const inspectionTools = ["save_observation", "complete_inspection", "create_maintenance_ticket", "create_safety_alert"];
+    const inspectionTools = [
+      "save_observation",
+      "complete_inspection",
+      "create_maintenance_ticket",
+      "create_safety_alert",
+      "get_inspection_status",
+    ];
     if (inspectionTools.includes(toolName) && !this._activeInspectionId) {
+      this._emitActivity("error", `Cannot execute ${toolName}: No active inspection context`, "error");
       this._pendingToolResults.push({
         callId,
         result: Promise.resolve({ success: false, error: "No active inspection context" }),
@@ -324,30 +350,67 @@ export class VoiceAgent {
     }
     if (toolName === "save_observation" && !argumentsObject.evidence_text && this._latestUserTranscript) {
       argumentsObject.evidence_text = this._latestUserTranscript;
-      this._latestUserTranscript = null;
     }
+
+    let toolDesc = `Executing ${toolName}`;
+    if (toolName === "save_observation") {
+      const unitStr = argumentsObject.unit ? ` ${argumentsObject.unit}` : "";
+      toolDesc = `Saving ${argumentsObject.field_name || "observation"}: ${argumentsObject.value}${unitStr}`;
+    } else if (toolName === "create_maintenance_ticket") {
+      toolDesc = `Creating maintenance ticket...`;
+    } else if (toolName === "create_safety_alert") {
+      toolDesc = `Creating safety alert...`;
+    } else if (toolName === "complete_inspection") {
+      toolDesc = `Completing inspection...`;
+    } else if (toolName === "get_inspection_status") {
+      toolDesc = `Checking inspection status...`;
+    }
+    this._emitActivity("tool_call", toolDesc, "pending", { toolName, callId, arguments: argumentsObject });
 
     console.log("[Voice] Tool call arguments", toolName, argumentsObject);
     const toolPromise = Promise.resolve().then(async () => {
       const res = await executeVoiceTool(toolName, argumentsObject);
-      if (toolName === "save_observation" && res?.success) {
-        this.onObservationSaved?.(res);
-      }
-      if (toolName === "complete_inspection" && res?.success) {
-        this.onInspectionCompleted?.(res);
-      }
-      if (toolName === "create_maintenance_ticket" && res?.success) {
-        this.onTicketCreated?.(res);
-      }
-      if (toolName === "create_safety_alert" && res?.success) {
-        this.onAlertCreated?.(res);
+      if (res?.success) {
+        if (toolName === "save_observation") {
+          this.onObservationSaved?.(res);
+          this._emitActivity("tool_result", `✓ Observation saved: ${res.field_name}`, "completed", { observationId: res.observation_id });
+          if (res.validation) {
+            if (res.validation.status === "out_of_range") {
+              const lim = res.validation.limit ? ` (${res.validation.limit.min}–${res.validation.limit.max})` : "";
+              this._emitActivity("validation", `⚠ ${res.field_name}: Out of range${lim}`, "warning", { validation: res.validation });
+            } else if (res.validation.status === "normal") {
+              this._emitActivity("validation", `✓ ${res.field_name}: Within operating limits`, "completed", { validation: res.validation });
+            } else {
+              this._emitActivity("validation", `○ ${res.field_name}: Status unknown`, "completed", { validation: res.validation });
+            }
+          }
+        } else if (toolName === "complete_inspection") {
+          this.onInspectionCompleted?.(res);
+          this._emitActivity("action", `✓ Inspection completed`, "completed");
+        } else if (toolName === "create_maintenance_ticket") {
+          this.onTicketCreated?.(res);
+          this._emitActivity("action", `✓ Maintenance ticket #${res.ticket_id} created (${res.priority || "medium"})`, "completed", { ticketId: res.ticket_id });
+        } else if (toolName === "create_safety_alert") {
+          this.onAlertCreated?.(res);
+          this._emitActivity("action", `⚠ Safety alert #${res.alert_id} created (${res.severity})`, "warning", { alertId: res.alert_id });
+        } else if (toolName === "get_inspection_status") {
+          const comp = res.completed_fields?.length ?? 0;
+          const req = res.required_fields?.length ?? 0;
+          this._emitActivity("tool_result", `✓ Inspection status retrieved (${comp}/${req} completed)`, "completed");
+        }
+      } else {
+        this._emitActivity("error", `Failed: ${res?.error || "Tool call failed"}`, "error", { toolName });
       }
       return res;
-    }).catch((err) => ({ success: false, error: err.message }));
+    }).catch((err) => {
+      this._emitActivity("error", `Error: ${err.message}`, "error", { toolName });
+      return { success: false, error: err.message };
+    });
 
     this._pendingToolResults.push({ callId, result: toolPromise });
     console.log(`[Voice] Tool requested: ${toolName}`);
   }
+
 
 
   async _sendPendingToolResults() {

@@ -4,18 +4,28 @@ import { VoiceAgent, ConnectionState } from "../services/voiceAgent";
 /**
  * VoiceTestPanel — Minimalist, theme-aligned Voice Assistant component.
  *
- * Designed to seamlessly blend with the warm editorial FieldVoice aesthetic:
- * - Clean white card with subtle warm borders and soft elevation
- * - Real-time state pill with subtle pulse feedback
- * - Forest green primary CTA matching the workspace theme
- * - Elegant, legible transcript stream with role-based message bubbles
+ * Extended with:
+ * - Real-time Live Activity Timeline (Core 6)
+ * - Tabs to switch between Conversation Transcript and Live Activity
+ * - Direct hooks for observations, tickets, alerts, and inspection completion
  */
-export default function VoiceTestPanel({ inspectionId, equipment }) {
+export default function VoiceTestPanel({
+  inspectionId,
+  equipment,
+  onObservationSaved,
+  onInspectionCompleted,
+  onTicketCreated,
+  onAlertCreated,
+  onActivityEvent,
+}) {
   const [connState, setConnState] = useState(ConnectionState.DISCONNECTED);
   const [transcripts, setTranscripts] = useState([]); // {role, text, partial}
+  const [activities, setActivities] = useState([]); // {id, timestamp, type, status, message, metadata}
+  const [activeTab, setActiveTab] = useState("transcript"); // 'transcript' | 'activity'
   const [error, setError] = useState(null);
   const agentRef = useRef(null);
   const transcriptEndRef = useRef(null);
+  const activityEndRef = useRef(null);
 
   // Lazily create the VoiceAgent instance
   const getAgent = useCallback(() => {
@@ -45,7 +55,7 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
       setTranscripts((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.role === "user" && last.partial) {
-          return [...prev.slice(0, -1), { role: "user", text, partial: false }];
+          return [...prev.slice(0, -1), { role: "user", text: (last.text || "") + text, partial: false }];
         }
         return [...prev, { role: "user", text, partial: false }];
       });
@@ -65,10 +75,31 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
       setTranscripts((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.role === "agent" && last.partial) {
-          return [...prev.slice(0, -1), { role: "agent", text, partial: false }];
+          return [...prev.slice(0, -1), { role: "agent", text: (last.text || "") + text, partial: false }];
         }
         return [...prev, { role: "agent", text, partial: false }];
       });
+    };
+
+    agent.onActivityEvent = (event) => {
+      setActivities((prev) => [...prev.slice(-49), event]);
+      onActivityEvent?.(event);
+    };
+
+    agent.onObservationSaved = (res) => {
+      onObservationSaved?.(res);
+    };
+
+    agent.onInspectionCompleted = (res) => {
+      onInspectionCompleted?.(res);
+    };
+
+    agent.onTicketCreated = (res) => {
+      onTicketCreated?.(res);
+    };
+
+    agent.onAlertCreated = (res) => {
+      onAlertCreated?.(res);
     };
 
     agent.onError = (msg) => setError(msg);
@@ -80,16 +111,26 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
     return () => {
       agent.disconnect();
     };
-  }, [getAgent, inspectionId, equipment]);
+  }, [getAgent, inspectionId, equipment, onObservationSaved, onInspectionCompleted, onTicketCreated, onAlertCreated, onActivityEvent]);
 
   // Smooth scroll to bottom when new transcript lines arrive
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [transcripts]);
+    if (activeTab === "transcript") {
+      transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [transcripts, activeTab]);
+
+  // Smooth scroll when activity entries arrive
+  useEffect(() => {
+    if (activeTab === "activity") {
+      activityEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [activities, activeTab]);
 
   const handleConnect = () => {
     setError(null);
     setTranscripts([]);
+    setActivities([]);
     getAgent().connect({ inspectionId, equipment });
   };
 
@@ -156,44 +197,109 @@ export default function VoiceTestPanel({ inspectionId, equipment }) {
         )}
       </div>
 
-      {/* Transcript Box */}
+      {/* Box Header with Tabs */}
       <div className="voice-transcript-box">
         <div className="voice-transcript-header">
-          <span>Conversation Transcript</span>
-          <span>{transcripts.length > 0 ? `${transcripts.length} entries` : "Live feed"}</span>
+          <div className="voice-tab-group" role="tablist">
+            <button
+              type="button"
+              className={`voice-tab-btn ${activeTab === "transcript" ? "active" : ""}`}
+              onClick={() => setActiveTab("transcript")}
+            >
+              Conversation {transcripts.length > 0 ? `(${transcripts.length})` : ""}
+            </button>
+            <button
+              type="button"
+              className={`voice-tab-btn ${activeTab === "activity" ? "active" : ""}`}
+              onClick={() => setActiveTab("activity")}
+            >
+              Live Activity {activities.length > 0 ? `(${activities.length})` : ""}
+            </button>
+          </div>
+          <span>
+            {activeTab === "transcript"
+              ? (transcripts.length > 0 ? `${transcripts.length} entries` : "Live feed")
+              : `${activities.length} events`}
+          </span>
         </div>
 
-        {transcripts.length === 0 ? (
-          <div className="voice-transcript-empty">
-            <div className="empty-mic-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="22" />
-              </svg>
-            </div>
-            <p>
-              {isActive
-                ? "Listening... speak observations naturally, like “Temperature is 74 degrees” or “Pressure looks normal”."
-                : "Click “Connect & Start Voice” to begin speaking with FieldVoice."}
-            </p>
-          </div>
-        ) : (
-          transcripts.map((t, i) => (
-            <div key={i} className={`voice-bubble ${t.role}`}>
-              {t.role !== "system" && (
-                <div className="voice-bubble-meta">
-                  <span>{t.role === "user" ? "You" : "FieldVoice"}</span>
-                </div>
-              )}
-              <div className="voice-bubble-text" style={{ opacity: t.partial ? 0.75 : 1 }}>
-                {t.text}
-                {t.partial && <span className="voice-typing-dots">…</span>}
+        {/* Tab 1: Conversation Transcript */}
+        {activeTab === "transcript" && (
+          transcripts.length === 0 ? (
+            <div className="voice-transcript-empty">
+              <div className="empty-mic-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
               </div>
+              <p>
+                {isActive
+                  ? "Listening... speak observations naturally, like “Temperature is 40 degrees, pressure is 91 PSI, vibration normal, no leakage”."
+                  : "Click “Connect & Start Voice” to begin speaking with FieldVoice."}
+              </p>
             </div>
-          ))
+          ) : (
+            <div>
+              {transcripts.map((t, i) => (
+                <div key={i} className={`voice-bubble ${t.role}`}>
+                  {t.role !== "system" && (
+                    <div className="voice-bubble-meta">
+                      <span>{t.role === "user" ? "You" : "FieldVoice"}</span>
+                    </div>
+                  )}
+                  <div className="voice-bubble-text" style={{ opacity: t.partial ? 0.75 : 1 }}>
+                    {t.text}
+                    {t.partial && <span className="voice-typing-dots">…</span>}
+                  </div>
+                </div>
+              ))}
+              <div ref={transcriptEndRef} />
+            </div>
+          )
         )}
-        <div ref={transcriptEndRef} />
+
+        {/* Tab 2: Live Activity Timeline */}
+        {activeTab === "activity" && (
+          activities.length === 0 ? (
+            <div className="voice-transcript-empty">
+              <p>No voice, tool, or validation events recorded yet. Connect and speak to see live backend events.</p>
+            </div>
+          ) : (
+            <div className="voice-activity-stream">
+              {activities.map((act) => {
+                const categoryLabel = {
+                  speech: act.metadata?.role === "user" ? "YOU" : "FIELDVOICE",
+                  tool_call: "TOOL",
+                  tool_result: "BACKEND",
+                  validation: "VALIDATION",
+                  action: "ACTION",
+                  system: "SYSTEM",
+                  error: "ERROR",
+                }[act.type] || "ACTIVITY";
+
+                const badgeClass = {
+                  completed: "act-badge-success",
+                  warning: "act-badge-warning",
+                  pending: "act-badge-pending",
+                  error: "act-badge-error",
+                }[act.status] || "act-badge-neutral";
+
+                return (
+                  <div key={act.id} className={`voice-activity-item ${badgeClass}`}>
+                    <div className="voice-activity-meta">
+                      <span className="voice-activity-time">{act.timestamp}</span>
+                      <span className={`voice-activity-badge ${badgeClass}`}>{categoryLabel}</span>
+                    </div>
+                    <div className="voice-activity-message">{act.message}</div>
+                  </div>
+                );
+              })}
+              <div ref={activityEndRef} />
+            </div>
+          )
+        )}
       </div>
 
       {/* Footer Helper */}

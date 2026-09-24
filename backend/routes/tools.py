@@ -8,7 +8,11 @@ from services.inspection_service import InspectionServiceError
 from services.maintenance_ticket_service import MaintenanceTicketServiceError
 from services.safety_alert_service import SafetyAlertServiceError
 from tools.equipment_tools import get_equipment_profile
-from tools.inspection_tools import complete_inspection_tool, save_observation_tool
+from tools.inspection_tools import (
+    complete_inspection_tool,
+    get_inspection_status_tool,
+    save_observation_tool,
+)
 from tools.maintenance_tools import create_maintenance_ticket_tool
 from tools.safety_tools import create_safety_alert_tool
 
@@ -131,4 +135,28 @@ def create_safety_alert_tool_endpoint():
         return jsonify({"success": False, "error": "Unable to create safety alert"}), 500
 
     logger.info("[Tool] create_safety_alert inspection_id=%s", inspection_id)
-    return jsonify(result), 200 if result.get("duplicate") else 201
+    return jsonify(result), 200 if result.get("duplicate") else 201
+
+
+@tools_bp.route("/api/tools/get-inspection-status", methods=["POST"])
+def get_inspection_status_tool_endpoint():
+    """Retrieve authoritative real-time inspection status requested by voice session."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "error": "Request body must be a JSON object"}), 400
+
+    inspection_id = payload.get("inspection_id")
+    if isinstance(inspection_id, bool) or not isinstance(inspection_id, int) or inspection_id <= 0:
+        return jsonify({"success": False, "error": "inspection_id must be a positive integer"}), 400
+
+    try:
+        result = get_inspection_status_tool(payload)
+    except InspectionServiceError as exc:
+        return jsonify({"success": False, "error": exc.message}), exc.status_code
+    except Exception:
+        logger.exception("[Tool] get_inspection_status failed")
+        return jsonify({"success": False, "error": "Unable to retrieve inspection status"}), 500
+
+    logger.info("[Tool] get_inspection_status inspection_id=%s", inspection_id)
+    return jsonify(result), 200
+

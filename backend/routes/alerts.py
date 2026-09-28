@@ -8,7 +8,9 @@ from services.safety_alert_service import (
 	create_alert,
 	get_alert,
 	get_alerts,
+	update_alert,
 )
+from utils.responses import api_error
 
 alerts_bp = Blueprint("alerts", __name__)
 logger = logging.getLogger(__name__)
@@ -107,3 +109,32 @@ def list_inspection_alerts_endpoint(inspection_id):
 	except Exception:
 		logger.exception("Listing inspection alerts failed")
 		return jsonify({"success": False, "error": "Unable to retrieve alerts for inspection"}), 500
+
+
+@alerts_bp.route("/api/safety-alerts/<int:alert_id>", methods=["PATCH"])
+def patch_alert_endpoint(alert_id):
+	"""PATCH /api/safety-alerts/<alert_id> — update alert status, severity, or hazard."""
+	if isinstance(alert_id, bool) or not isinstance(alert_id, int) or alert_id <= 0:
+		return api_error("alert_id must be a positive integer", status_code=400)
+
+	payload = request.get_json(silent=True)
+	if not isinstance(payload, dict):
+		return api_error("Request body must be a JSON object", status_code=400)
+
+	try:
+		updated = update_alert(
+			alert_id=alert_id,
+			status=payload.get("status"),
+			severity=payload.get("severity"),
+			hazard=payload.get("hazard"),
+		)
+		return jsonify({
+			"success": True,
+			"alert": _serialize_alert(updated),
+		}), 200
+	except SafetyAlertServiceError as exc:
+		return api_error(exc.message, status_code=exc.status_code)
+	except Exception:
+		logger.exception("Safety alert update failed for alert_id=%s", alert_id)
+		return api_error("Unable to update safety alert", status_code=500)
+

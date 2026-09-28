@@ -8,7 +8,9 @@ from services.maintenance_ticket_service import (
 	create_ticket,
 	get_ticket,
 	get_tickets,
+	update_ticket,
 )
+from utils.responses import api_error
 
 tickets_bp = Blueprint("tickets", __name__)
 logger = logging.getLogger(__name__)
@@ -105,3 +107,32 @@ def list_inspection_tickets_endpoint(inspection_id):
 	except Exception:
 		logger.exception("Listing inspection tickets failed")
 		return jsonify({"success": False, "error": "Unable to retrieve tickets for inspection"}), 500
+
+
+@tickets_bp.route("/api/tickets/<int:ticket_id>", methods=["PATCH"])
+def patch_ticket_endpoint(ticket_id):
+	"""PATCH /api/tickets/<ticket_id> — update ticket status, priority, or issue."""
+	if isinstance(ticket_id, bool) or not isinstance(ticket_id, int) or ticket_id <= 0:
+		return api_error("ticket_id must be a positive integer", status_code=400)
+
+	payload = request.get_json(silent=True)
+	if not isinstance(payload, dict):
+		return api_error("Request body must be a JSON object", status_code=400)
+
+	try:
+		updated = update_ticket(
+			ticket_id=ticket_id,
+			status=payload.get("status"),
+			priority=payload.get("priority"),
+			issue=payload.get("issue"),
+		)
+		return jsonify({
+			"success": True,
+			"ticket": _serialize_ticket(updated),
+		}), 200
+	except MaintenanceTicketServiceError as exc:
+		return api_error(exc.message, status_code=exc.status_code)
+	except Exception:
+		logger.exception("Ticket update failed for ticket_id=%s", ticket_id)
+		return api_error("Unable to update maintenance ticket", status_code=500)
+

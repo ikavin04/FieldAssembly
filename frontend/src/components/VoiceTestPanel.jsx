@@ -27,15 +27,33 @@ export default function VoiceTestPanel({
   const transcriptEndRef = useRef(null);
   const activityEndRef = useRef(null);
 
+  // Store callbacks in ref so effect doesn't re-run and disconnect on every parent re-render
+  const callbacksRef = useRef({});
+  callbacksRef.current = {
+    onObservationSaved,
+    onInspectionCompleted,
+    onTicketCreated,
+    onAlertCreated,
+    onActivityEvent,
+  };
+
   // Lazily create the VoiceAgent instance
   const getAgent = useCallback(() => {
     if (!agentRef.current) {
       agentRef.current = new VoiceAgent({ inspectionId, equipment });
     }
     return agentRef.current;
+  }, []);
+
+  // Update inspection context on active agent without tearing down connection
+  useEffect(() => {
+    if (agentRef.current) {
+      agentRef.current._activeInspectionId = inspectionId;
+      agentRef.current._activeEquipment = equipment;
+    }
   }, [inspectionId, equipment]);
 
-  // Wire up callbacks once
+  // Wire up callbacks once on mount
   useEffect(() => {
     const agent = getAgent();
 
@@ -55,7 +73,7 @@ export default function VoiceTestPanel({
       setTranscripts((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.role === "user" && last.partial) {
-          return [...prev.slice(0, -1), { role: "user", text: (last.text || "") + text, partial: false }];
+          return [...prev.slice(0, -1), { role: "user", text: text || last.text, partial: false }];
         }
         return [...prev, { role: "user", text, partial: false }];
       });
@@ -75,7 +93,7 @@ export default function VoiceTestPanel({
       setTranscripts((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.role === "agent" && last.partial) {
-          return [...prev.slice(0, -1), { role: "agent", text: (last.text || "") + text, partial: false }];
+          return [...prev.slice(0, -1), { role: "agent", text: text || last.text, partial: false }];
         }
         return [...prev, { role: "agent", text, partial: false }];
       });
@@ -83,23 +101,23 @@ export default function VoiceTestPanel({
 
     agent.onActivityEvent = (event) => {
       setActivities((prev) => [...prev.slice(-49), event]);
-      onActivityEvent?.(event);
+      callbacksRef.current.onActivityEvent?.(event);
     };
 
     agent.onObservationSaved = (res) => {
-      onObservationSaved?.(res);
+      callbacksRef.current.onObservationSaved?.(res);
     };
 
     agent.onInspectionCompleted = (res) => {
-      onInspectionCompleted?.(res);
+      callbacksRef.current.onInspectionCompleted?.(res);
     };
 
     agent.onTicketCreated = (res) => {
-      onTicketCreated?.(res);
+      callbacksRef.current.onTicketCreated?.(res);
     };
 
     agent.onAlertCreated = (res) => {
-      onAlertCreated?.(res);
+      callbacksRef.current.onAlertCreated?.(res);
     };
 
     agent.onError = (msg) => setError(msg);
@@ -111,7 +129,7 @@ export default function VoiceTestPanel({
     return () => {
       agent.disconnect();
     };
-  }, [getAgent, inspectionId, equipment, onObservationSaved, onInspectionCompleted, onTicketCreated, onAlertCreated, onActivityEvent]);
+  }, [getAgent]);
 
   // Smooth scroll to bottom when new transcript lines arrive
   useEffect(() => {

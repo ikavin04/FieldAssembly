@@ -78,3 +78,45 @@ def complete_inspection(inspection_id, summary=None):
 	finally:
 		conn.close()
 
+
+def update_inspection_status_model(inspection_id, status, summary=None):
+	"""Update inspection status with timestamp updates, returning updated row."""
+	conn = get_connection()
+	try:
+		cur = conn.cursor()
+		if status == "completed":
+			cur.execute(
+				"""
+				UPDATE inspections
+				SET status = %s,
+					completed_at = COALESCE(completed_at, NOW()),
+					summary = COALESCE(%s, summary),
+					updated_at = NOW()
+				WHERE id = %s
+				RETURNING id, equipment_id, status, inspection_type, started_at,
+						  completed_at, summary, created_at, updated_at;
+				""",
+				(status, summary, inspection_id),
+			)
+		else:
+			cur.execute(
+				"""
+				UPDATE inspections
+				SET status = %s,
+					summary = COALESCE(%s, summary),
+					updated_at = NOW()
+				WHERE id = %s
+				RETURNING id, equipment_id, status, inspection_type, started_at,
+						  completed_at, summary, created_at, updated_at;
+				""",
+				(status, summary, inspection_id),
+			)
+		row = cur.fetchone()
+		conn.commit()
+		cur.close()
+		return row
+	except Exception:
+		conn.rollback()
+		raise
+	finally:
+		conn.close()

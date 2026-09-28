@@ -75,3 +75,17 @@ CREATE TABLE IF NOT EXISTS safety_alerts (
     created_at      TIMESTAMP    DEFAULT NOW(),
     resolved_at     TIMESTAMP
 );
+
+-- ============================================================
+-- Performance Indexes
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_inspections_equipment_id ON inspections(equipment_id);
+CREATE INDEX IF NOT EXISTS idx_inspections_status ON inspections(status);
+CREATE INDEX IF NOT EXISTS idx_observations_inspection_id ON observations(inspection_id);
+CREATE INDEX IF NOT EXISTS idx_maintenance_tickets_inspection_id ON maintenance_tickets(inspection_id);
+CREATE INDEX IF NOT EXISTS idx_maintenance_tickets_status ON maintenance_tickets(status);
+CREATE INDEX IF NOT EXISTS idx_maintenance_tickets_priority ON maintenance_tickets(priority);
+CREATE INDEX IF NOT EXISTS idx_safety_alerts_inspection_id ON safety_alerts(inspection_id);
+CREATE INDEX IF NOT EXISTS idx_safety_alerts_status ON safety_alerts(status);
+CREATE INDEX IF NOT EXISTS idx_safety_alerts_severity ON safety_alerts(severity);
+

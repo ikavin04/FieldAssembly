@@ -10,6 +10,7 @@ from models.safety_alert import (
 	get_alert_by_id,
 	get_alerts_for_inspection,
 	get_all_alerts,
+	update_safety_alert,
 )
 
 logger = logging.getLogger(__name__)
@@ -208,3 +209,46 @@ def get_alerts(inspection_id=None, status=None, severity=None):
 			ad["equipment_location"] = eq.get("location")
 		enriched.append(ad)
 	return enriched
+
+
+def update_alert(alert_id, status=None, severity=None, hazard=None):
+	"""Update a safety alert with validation."""
+	if isinstance(alert_id, bool) or not isinstance(alert_id, int) or alert_id <= 0:
+		raise SafetyAlertServiceError("alert_id must be a positive integer", 400)
+
+	existing = get_alert_by_id(alert_id)
+	if existing is None:
+		raise SafetyAlertServiceError("Safety alert not found", 404)
+
+	norm_status = None
+	if status is not None:
+		if not isinstance(status, str) or status.strip().lower() not in VALID_STATUSES:
+			raise SafetyAlertServiceError(
+				f"Invalid status '{status}'. Must be one of: {', '.join(sorted(VALID_STATUSES))}",
+				400,
+			)
+		norm_status = status.strip().lower()
+
+	norm_severity = None
+	if severity is not None:
+		if not isinstance(severity, str) or severity.strip().lower() not in VALID_SEVERITIES:
+			raise SafetyAlertServiceError(
+				f"Invalid severity '{severity}'. Must be one of: {', '.join(sorted(VALID_SEVERITIES))}",
+				400,
+			)
+		norm_severity = severity.strip().lower()
+
+	norm_hazard = None
+	if hazard is not None:
+		if not isinstance(hazard, str) or not hazard.strip():
+			raise SafetyAlertServiceError("hazard must be a non-empty string", 400)
+		norm_hazard = hazard.strip()
+
+	update_safety_alert(
+		alert_id=alert_id,
+		status=norm_status,
+		severity=norm_severity,
+		hazard=norm_hazard,
+	)
+	return get_alert(alert_id)
+

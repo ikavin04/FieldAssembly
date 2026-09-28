@@ -39,11 +39,28 @@ export const ConnectionState = Object.freeze({
 
 const WORKLET_PROCESSOR_CODE = `
 class PcmCaptureProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._buffer = new Float32Array(1200); // 50ms at 24000 Hz
+    this._offset = 0;
+  }
+
   process(inputs) {
     const input = inputs[0];
     if (input && input[0] && input[0].length > 0) {
-      // Clone the Float32 samples and send to main thread
-      this.port.postMessage(new Float32Array(input[0]));
+      const channel = input[0];
+      let i = 0;
+      while (i < channel.length) {
+        const toCopy = Math.min(channel.length - i, this._buffer.length - this._offset);
+        this._buffer.set(channel.subarray(i, i + toCopy), this._offset);
+        this._offset += toCopy;
+        i += toCopy;
+
+        if (this._offset >= this._buffer.length) {
+          this.port.postMessage(new Float32Array(this._buffer));
+          this._offset = 0;
+        }
+      }
     }
     return true; // keep processor alive
   }
@@ -128,6 +145,11 @@ export class VoiceAgent {
 
     try {
       this._setState(ConnectionState.CONNECTING);
+
+      // Start microphone capture immediately within the user click gesture stack
+      console.log("[Voice] Initiating microphone and session in parallel");
+      const micPromise = this._startMicrophone();
+
       console.log("[Voice] Requesting temporary token");
 
       // 1. Get temporary token
@@ -139,6 +161,9 @@ export class VoiceAgent {
       const { token } = await tokenRes.json();
       if (!token) throw new Error("Empty token received from backend");
       console.log("[Voice] Token received");
+
+      // Ensure microphone pipeline is ready
+      await micPromise;
 
       // 2. Open WebSocket
       const wsUrl = `${ASSEMBLYAI_WS_URL}?token=${encodeURIComponent(token)}`;
@@ -156,7 +181,7 @@ export class VoiceAgent {
       this._ws.onerror = (event) => {
         console.error("[Voice] WebSocket error", event);
         this._setState(ConnectionState.ERROR);
-        this.onError?.("WebSocket connection error");
+        this.onError?.("Realtime connection failed (WebSocket error)");
       };
 
       this._ws.onclose = (event) => {
@@ -223,12 +248,16 @@ export class VoiceAgent {
       return;
     }
 
+    console.log("[Voice] Event from server:", msg.type, msg.text || msg.status || "");
+
     switch (msg.type) {
       case "session.ready":
         console.log("[Voice] session.ready");
         this._sessionReady = true;
         this._setState(ConnectionState.LISTENING);
-        this._startMicrophone();
+        if (!this._workletNode) {
+          this._startMicrophone();
+        }
         this._emitActivity("system", "Voice assistant ready (listening)", "completed");
         break;
 
@@ -236,6 +265,7 @@ export class VoiceAgent {
         console.log("[Voice] session.updated");
         break;
 
+      case "SpeechStarted":
       case "input.speech.started":
         console.log("[Voice] User started speaking");
         if (this._state === ConnectionState.SPEAKING) {
@@ -245,20 +275,22 @@ export class VoiceAgent {
         this._setState(ConnectionState.LISTENING);
         break;
 
+      case "SpeechStopped":
       case "input.speech.stopped":
         console.log("[Voice] User stopped speaking");
         this._setState(ConnectionState.THINKING);
         break;
 
       case "transcript.user.delta":
-        this.onUserTranscriptDelta?.(msg.text || msg.delta || "");
+        this.onUserTranscriptDelta?.(msg.text || msg.delta || msg.transcript || "");
         break;
 
       case "transcript.user":
-        console.log("[Voice] User transcript received");
-        this._latestUserTranscript = msg.text || "";
-        this.onUserTranscript?.(msg.text || "");
-        this._emitActivity("speech", msg.text || "", "completed", { role: "user" });
+        const userText = msg.text || msg.transcript || msg.content || "";
+        console.log("[Voice] User transcript received:", userText);
+        this._latestUserTranscript = userText;
+        this.onUserTranscript?.(userText);
+        this._emitActivity("speech", userText, "completed", { role: "user" });
         break;
 
       case "reply.started":
@@ -271,13 +303,14 @@ export class VoiceAgent {
         break;
 
       case "transcript.agent.delta":
-        this.onAgentTranscriptDelta?.(msg.text || msg.delta || "");
+        this.onAgentTranscriptDelta?.(msg.text || msg.delta || msg.transcript || "");
         break;
 
       case "transcript.agent":
-        console.log("[Voice] Agent transcript received");
-        this.onAgentTranscript?.(msg.text || "");
-        this._emitActivity("speech", msg.text || "", "completed", { role: "agent" });
+        const agentText = msg.text || msg.transcript || msg.content || "";
+        console.log("[Voice] Agent transcript received:", agentText);
+        this.onAgentTranscript?.(agentText);
+        this._emitActivity("speech", agentText, "completed", { role: "agent" });
         break;
 
       case "reply.done":
@@ -454,19 +487,67 @@ export class VoiceAgent {
 
   async _startMicrophone() {
     try {
-      console.log("[Voice] Requesting microphone");
+      console.log("[Voice] microphone request started");
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        throw new Error("Microphone access is not supported by your browser or environment");
+      }
       this._mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
-          sampleRate: SAMPLE_RATE,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
       });
+      console.log("[Voice] microphone permission granted");
 
-      // Create AudioContext at the target sample rate
-      this._audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+      const tracks = this._mediaStream.getAudioTracks();
+      console.log("[Voice] number of audio tracks:", tracks.length);
+      if (tracks.length === 0) {
+        throw new Error("No audio tracks found on microphone stream");
+      }
+
+      const audioTrack = tracks[0];
+      console.log("[Voice] audio track state:", {
+        enabled: audioTrack.enabled,
+        readyState: audioTrack.readyState,
+        muted: audioTrack.muted,
+        label: audioTrack.label,
+      });
+      console.log("[Voice] audio track enabled:", audioTrack.enabled);
+      console.log("[Voice] audio track readyState:", audioTrack.readyState);
+
+      if (!audioTrack.enabled) {
+        console.warn("[Voice] Audio track was disabled, enabling now");
+        audioTrack.enabled = true;
+      }
+
+      if (audioTrack.muted) {
+        console.warn("[Voice] ATTENTION: Microphone is MUTED at the Windows OS or hardware level! (e.g. laptop microphone mute key or Windows Sound Settings)");
+        this._emitActivity("warning", "Microphone is muted in Windows. Please unmute.", "warning");
+      }
+
+      audioTrack.onmute = () => {
+        console.warn("[Voice] Microphone was muted by Windows or hardware mute key");
+        this._emitActivity("warning", "Microphone was muted", "warning");
+      };
+
+      audioTrack.onunmute = () => {
+        console.log("[Voice] Microphone was unmuted by Windows/hardware");
+        this._emitActivity("system", "Microphone unmuted", "completed");
+      };
+
+      if (audioTrack.readyState !== "live") {
+        console.warn("[Voice] Audio track readyState is not 'live':", audioTrack.readyState);
+      }
+
+      // Create AudioContext at the target sample rate and ensure active running state
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      this._audioContext = new AudioCtx({ sampleRate: SAMPLE_RATE });
+      if (this._audioContext.state === "suspended") {
+        await this._audioContext.resume();
+      }
+      console.log("[Voice] AudioContext active, sampleRate:", this._audioContext.sampleRate, "state:", this._audioContext.state);
 
       // Register worklet processor from inline source
       const blob = new Blob([WORKLET_PROCESSOR_CODE], { type: "application/javascript" });
@@ -474,16 +555,33 @@ export class VoiceAgent {
       await this._audioContext.audioWorklet.addModule(workletUrl);
       URL.revokeObjectURL(workletUrl);
 
-      // Create nodes
+      // Create audio nodes
       this._sourceNode = this._audioContext.createMediaStreamSource(this._mediaStream);
       this._workletNode = new AudioWorkletNode(this._audioContext, "pcm-capture-processor");
 
-      // Receive Float32 samples from audio thread
+      // Connect through a zero-gain node to destination: keeps AudioWorklet active without acoustic feedback
+      const silenceGain = this._audioContext.createGain();
+      silenceGain.gain.value = 0;
+      this._sourceNode.connect(this._workletNode);
+      this._workletNode.connect(silenceGain);
+      silenceGain.connect(this._audioContext.destination);
+
+      // Receive Float32 samples from audio thread and stream to WebSocket
+      let sentCount = 0;
+      let maxRecentPeak = 0;
+
       this._workletNode.port.onmessage = (e) => {
+        const float32 = e.data;
+        let peak = 0;
+        for (let i = 0; i < float32.length; i++) {
+          const abs = Math.abs(float32[i]);
+          if (abs > peak) peak = abs;
+        }
+        if (peak > maxRecentPeak) maxRecentPeak = peak;
+
         if (!this._sessionReady) return;
         if (this._ws?.readyState !== WebSocket.OPEN) return;
 
-        const float32 = e.data;
         const pcm16 = this._float32ToPcm16(float32);
         const base64 = this._arrayBufferToBase64(pcm16.buffer);
 
@@ -491,15 +589,38 @@ export class VoiceAgent {
           type: "input.audio",
           audio: base64,
         }));
+        sentCount++;
+
+        if (sentCount === 1) {
+          console.log("[Voice] Audio capture started. First chunk sent.");
+        }
+        if (sentCount % 40 === 0) { // Every ~2.0s
+          console.log(`[Voice] Audio chunk sent: #${sentCount} (~${(sentCount * 0.05).toFixed(1)}s), size: ${pcm16.byteLength} bytes, current peak: ${(peak * 100).toFixed(1)}%, recent max peak: ${(maxRecentPeak * 100).toFixed(1)}%`);
+          if (maxRecentPeak < 0.005) {
+            console.warn("[Voice] Warning: Microphone audio levels are near zero (<0.5%). Check if microphone is physically muted, muted in Windows Sound Settings, or disabled in browser permissions.");
+          }
+          maxRecentPeak = 0;
+        }
       };
 
-      this._sourceNode.connect(this._workletNode);
-      this._workletNode.connect(this._audioContext.destination); // required to keep worklet alive
-      console.log("[Voice] Microphone started");
+      console.log("[Voice] Microphone started and listening");
     } catch (err) {
-      console.error("[Voice] Microphone error:", err.message);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        console.warn("[Voice] microphone permission denied");
+      }
+      console.error("[Voice] Microphone error:", err.name, err.message);
+
+      let userFriendlyMsg = `Microphone access failed: ${err.message}`;
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        userFriendlyMsg = "Microphone permission denied. Please allow microphone access in your browser settings.";
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        userFriendlyMsg = "Microphone unavailable. No microphone device found on this system.";
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        userFriendlyMsg = "Microphone is in use by another application or unavailable.";
+      }
+
       this._setState(ConnectionState.ERROR);
-      this.onError?.(`Microphone access failed: ${err.message}`);
+      this.onError?.(userFriendlyMsg);
     }
   }
 
@@ -517,8 +638,9 @@ export class VoiceAgent {
   _arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    const len = bytes.length;
+    for (let i = 0; i < len; i += 1024) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 1024, len)));
     }
     return btoa(binary);
   }
@@ -572,7 +694,7 @@ export class VoiceAgent {
     source.onended = () => {
       // When the last chunk finishes and we're still in SPEAKING state,
       // transition back to LISTENING
-      if (this._nextPlaybackTime <= this._playbackCtx.currentTime + 0.05) {
+      if (this._playbackCtx && this._nextPlaybackTime <= this._playbackCtx.currentTime + 0.05) {
         if (this._state === ConnectionState.SPEAKING) {
           this._setState(ConnectionState.LISTENING);
         }

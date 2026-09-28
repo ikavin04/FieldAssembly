@@ -17,7 +17,7 @@ def get_voice_token():
         return jsonify({"token": token})
     except ValueError as ve:
         logger.warning("Voice token validation error: %s", ve)
-        return jsonify({"error": "Unable to obtain voice session token"}), 400
+        return jsonify({"error": "AssemblyAI API key is missing or unconfigured. Please add your ASSEMBLYAI_API_KEY in backend/.env"}), 400
     except Exception as exc:
         logger.error("Error generating voice token: %s", exc)
         return jsonify({"error": "Unable to obtain voice session token"}), 500

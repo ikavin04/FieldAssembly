@@ -1,5 +1,6 @@
 """Safety alert data model."""
 
+import re
 from database.connection import get_connection
 
 ALERT_COLUMNS = """
@@ -93,15 +94,95 @@ def find_duplicate_alert(inspection_id, hazard):
 	conn = get_connection()
 	try:
 		cur = conn.cursor()
+		# 1. Exact case-insensitive match in database
 		cur.execute(
 			f"""
 			SELECT {ALERT_COLUMNS} FROM safety_alerts
 			WHERE inspection_id = %s AND LOWER(TRIM(hazard)) = LOWER(TRIM(%s))
-			ORDER BY id LIMIT 1;
+			ORDER BY id ASC LIMIT 1;
 			""",
 			(inspection_id, hazard),
 		)
-		return cur.fetchone()
+		row = cur.fetchone()
+		if row:
+			return row
+
+		# 2. Check for semantic equivalence
+		cur.execute(
+			f"""
+			SELECT {ALERT_COLUMNS} FROM safety_alerts
+			WHERE inspection_id = %s
+			ORDER BY id ASC;
+			""",
+			(inspection_id,),
+		)
+		rows = cur.fetchall()
+		if not rows:
+			return None
+
+		norm_target = " ".join(hazard.lower().replace(":", " is").split())
+		for r in rows:
+			row_norm = " ".join(r["hazard"].lower().replace(":", " is").split())
+			if row_norm == norm_target:
+				return r
+
+		target_tokens = set(re.findall(r"\b\w+\b", hazard.lower()))
+		for r in rows:
+			row_tokens = set(re.findall(r"\b\w+\b", r["hazard"].lower()))
+			overlap = target_tokens.intersection(row_tokens)
+			if len(overlap) >= 3 and (
+				"overpressure" in overlap
+				or "leak" in overlap
+				or "smoke" in overlap
+				or "fire" in overlap
+				or "hazard" in overlap
+			):
+				return r
+
+		return None
+	finally:
+		cur.close()
+		conn.close()
+
+
+def update_safety_alert(alert_id, status=None, severity=None, hazard=None):
+	"""Update safety alert fields and return the updated record."""
+	conn = get_connection()
+	try:
+		cur = conn.cursor()
+		clauses = []
+		params = []
+		if status is not None:
+			clauses.append("status = %s")
+			params.append(status)
+			if status in ("resolved", "closed"):
+				clauses.append("resolved_at = COALESCE(resolved_at, NOW())")
+			elif status == "open":
+				clauses.append("resolved_at = NULL")
+		if severity is not None:
+			clauses.append("severity = %s")
+			params.append(severity)
+		if hazard is not None:
+			clauses.append("hazard = %s")
+			params.append(hazard)
+
+		if not clauses:
+			return get_alert_by_id(alert_id)
+
+		params.append(alert_id)
+		set_sql = ", ".join(clauses)
+		cur.execute(
+			f"""
+			UPDATE safety_alerts
+			SET {set_sql}
+			WHERE id = %s
+			RETURNING {ALERT_COLUMNS};
+			""",
+			tuple(params),
+		)
+		updated = cur.fetchone()
+		conn.commit()
+		return updated
 	finally:
 		cur.close()
 		conn.close()

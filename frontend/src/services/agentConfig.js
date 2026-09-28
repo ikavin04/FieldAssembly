@@ -201,7 +201,7 @@ export const KEY_TERMS = [
 // ---------------------------------------------------------------------------
 
 export const TURN_DETECTION = {
-  vad_threshold: 0.5,
+  vad_threshold: 0.3,
   min_silence: 600,
   max_silence: 1500,
   interrupt_response: true,
@@ -329,10 +329,16 @@ export function buildSessionConfig(context = {}) {
     system_prompt: `${SYSTEM_PROMPT}\n\nACTIVE SESSION CONTEXT\n${contextLines}`,
     greeting: GREETING,
     input: {
+      format: {
+        encoding: "audio/pcm",
+      },
       turn_detection: TURN_DETECTION,
       keyterms: KEY_TERMS,
     },
     output: {
+      format: {
+        encoding: "audio/pcm",
+      },
       voice: VOICE_ID,
     },
   };

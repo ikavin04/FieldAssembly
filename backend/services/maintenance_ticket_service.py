@@ -9,6 +9,7 @@ from models.maintenance_ticket import (
 	get_all_tickets,
 	get_ticket_by_id,
 	get_tickets_for_inspection,
+	update_maintenance_ticket,
 )
 from models.observation import get_observations_for_inspection
 
@@ -149,3 +150,46 @@ def get_tickets(inspection_id=None, status=None, priority=None):
 			td["equipment_location"] = eq.get("location")
 		enriched.append(td)
 	return enriched
+
+
+def update_ticket(ticket_id, status=None, priority=None, issue=None):
+	"""Update a maintenance ticket with validation."""
+	if isinstance(ticket_id, bool) or not isinstance(ticket_id, int) or ticket_id <= 0:
+		raise MaintenanceTicketServiceError("ticket_id must be a positive integer", 400)
+
+	existing = get_ticket_by_id(ticket_id)
+	if existing is None:
+		raise MaintenanceTicketServiceError("Maintenance ticket not found", 404)
+
+	norm_status = None
+	if status is not None:
+		if not isinstance(status, str) or status.strip().lower() not in VALID_STATUSES:
+			raise MaintenanceTicketServiceError(
+				f"Invalid status '{status}'. Must be one of: {', '.join(sorted(VALID_STATUSES))}",
+				400,
+			)
+		norm_status = status.strip().lower()
+
+	norm_priority = None
+	if priority is not None:
+		if not isinstance(priority, str) or priority.strip().lower() not in VALID_PRIORITIES:
+			raise MaintenanceTicketServiceError(
+				f"Invalid priority '{priority}'. Must be one of: {', '.join(sorted(VALID_PRIORITIES))}",
+				400,
+			)
+		norm_priority = priority.strip().lower()
+
+	norm_issue = None
+	if issue is not None:
+		if not isinstance(issue, str) or not issue.strip():
+			raise MaintenanceTicketServiceError("issue must be a non-empty string", 400)
+		norm_issue = issue.strip()
+
+	update_maintenance_ticket(
+		ticket_id=ticket_id,
+		status=norm_status,
+		priority=norm_priority,
+		issue=norm_issue,
+	)
+	return get_ticket(ticket_id)
+

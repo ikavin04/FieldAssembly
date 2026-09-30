@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+const rawApiBase = import.meta.env.VITE_API_BASE_URL || "";
+const API_BASE = rawApiBase.trim().replace(/[\r\n]/g, "").replace(/\/+$/, "");
 
 async function requestJson(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {

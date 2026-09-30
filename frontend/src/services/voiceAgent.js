@@ -17,6 +17,7 @@ import { executeVoiceTool } from "./api.js";
 // ---------------------------------------------------------------------------
 
 const ASSEMBLYAI_WS_URL = "wss://agents.assemblyai.com/v1/ws";
+const SAMPLE_RATE = 24_000; // AssemblyAI Voice Agent PCM format
 const rawBackendBase = import.meta.env.VITE_API_BASE_URL || "";
 const BACKEND_BASE = rawBackendBase.trim().replace(/[\r\n]/g, "").replace(/\/+$/, ""); // empty string = same-origin
 

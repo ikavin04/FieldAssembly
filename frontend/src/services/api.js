@@ -1,7 +1,7 @@
 const rawApiBase = import.meta.env.VITE_API_BASE_URL || "";
-const API_BASE = rawApiBase.trim().replace(/[\r\n]/g, "").replace(/\/+$/, "");
+export const API_BASE = rawApiBase.trim().replace(/[\r\n]/g, "").replace(/\/+$/, "");
 
-async function requestJson(path, options = {}) {
+export async function requestJson(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
@@ -11,6 +11,19 @@ async function requestJson(path, options = {}) {
     throw new Error(payload.error || `Request failed: ${response.status}`);
   }
   return payload;
+}
+
+export function checkHealth() {
+  return requestJson("/api/health");
+}
+
+export function getEquipment(params = {}) {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.type) query.set("type", params.type);
+  if (params.location) query.set("location", params.location);
+  const qs = query.toString();
+  return requestJson(`/api/equipment${qs ? `?${qs}` : ""}`);
 }
 
 export function getMaintenanceTickets(params = {}) {

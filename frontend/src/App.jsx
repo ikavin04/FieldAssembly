@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import VoiceTestPanel from './components/VoiceTestPanel'
-import { getInspectionReport, getMaintenanceTickets, getSafetyAlerts } from './services/api'
+import { getInspectionReport, getMaintenanceTickets, getSafetyAlerts, checkHealth, getEquipment, API_BASE } from './services/api'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', index: '01' },
@@ -20,9 +20,8 @@ function App() {
 
   useEffect(() => {
     if (path === '/') return undefined
-    fetch('/api/health')
-      .then((response) => {
-        if (!response.ok) throw new Error('Health request failed')
+    checkHealth()
+      .then(() => {
         setBackendState('connected')
       })
       .catch(() => setBackendState('unavailable'))
@@ -39,17 +38,14 @@ function App() {
 
   useEffect(() => {
     if (path === '/') return undefined
-    fetch('/api/equipment')
-      .then((response) => {
-        if (!response.ok) throw new Error('Equipment request failed')
-        return response.json()
-      })
+    getEquipment()
       .then((items) => {
         setEquipment(Array.isArray(items) ? items : [])
         setEquipmentState('ready')
       })
       .catch(() => setEquipmentState('unavailable'))
   }, [path])
+
 
   const navigate = (href) => {
     window.history.pushState({}, '', href)
@@ -407,7 +403,7 @@ function InspectionPage({ navigate, equipment, path }) {
   useEffect(() => {
     if (routeId !== 'new' || !selected || activeInspectionId) return
     let cancelled = false
-    fetch('/api/inspections', {
+    fetch(`${API_BASE}/api/inspections`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ equipment_id: selected.id, inspection_type: 'routine' }),
@@ -435,7 +431,7 @@ function InspectionPage({ navigate, equipment, path }) {
 
     const fetchInspection = async () => {
       try {
-        const res = await fetch(`/api/inspections/${activeInspectionId}`)
+        const res = await fetch(`${API_BASE}/api/inspections/${activeInspectionId}`)
         if (!res.ok) return
         const data = await res.json()
         if (isMounted) {
@@ -464,7 +460,7 @@ function InspectionPage({ navigate, equipment, path }) {
     setIsCompleting(true)
     setCompletionError(null)
     try {
-      const res = await fetch(`/api/inspections/${activeInspectionId}/complete`, {
+      const res = await fetch(`${API_BASE}/api/inspections/${activeInspectionId}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -485,7 +481,7 @@ function InspectionPage({ navigate, equipment, path }) {
 
   const handleObservationSaved = () => {
     if (!activeInspectionId) return
-    fetch(`/api/inspections/${activeInspectionId}`)
+    fetch(`${API_BASE}/api/inspections/${activeInspectionId}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) setInspectionData(data)
@@ -608,19 +604,19 @@ function ResultPage({ navigate, path, equipment }) {
     setError(null)
 
     Promise.all([
-      fetch(`/api/inspections/${inspectionId}`).then((r) => {
+      fetch(`${API_BASE}/api/inspections/${inspectionId}`).then((r) => {
         if (!r.ok) throw new Error(`Inspection #${inspectionId} not found`)
         return r.json()
       }),
-      fetch(`/api/inspections/${inspectionId}/observations`).then((r) => {
+      fetch(`${API_BASE}/api/inspections/${inspectionId}/observations`).then((r) => {
         if (!r.ok) return []
         return r.json()
       }),
-      fetch(`/api/inspections/${inspectionId}/tickets`).then((r) => {
+      fetch(`${API_BASE}/api/inspections/${inspectionId}/tickets`).then((r) => {
         if (!r.ok) return []
         return r.json()
       }),
-      fetch(`/api/inspections/${inspectionId}/alerts`).then((r) => {
+      fetch(`${API_BASE}/api/inspections/${inspectionId}/alerts`).then((r) => {
         if (!r.ok) return []
         return r.json()
       }),

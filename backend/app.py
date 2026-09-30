@@ -53,6 +53,54 @@ def create_app():
     app.register_blueprint(tools_bp)
     app.register_blueprint(dashboard_bp)
 
+    @app.route("/")
+    def index():
+        """Root API status endpoint."""
+        return {
+            "service": "FieldVoice Backend API",
+            "status": "online",
+            "version": "1.0.0",
+            "frontend": "https://frontend-six-lac-68.vercel.app",
+            "endpoints": {
+                "health": "/api/health",
+                "equipment": "/api/equipment",
+                "tickets": "/api/tickets",
+                "alerts": "/api/safety-alerts",
+                "dashboard": "/api/dashboard/summary",
+                "seed": "/api/seed",
+            },
+        }, 200
+
+    @app.route("/api/seed", methods=["GET", "POST"])
+    def seed_database():
+        """Ensure initial equipment dataset is seeded."""
+        try:
+            from database.seed import seed
+            seed()
+            from database.connection import get_db_connection
+            with get_db_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) as count FROM equipment")
+                count = cur.fetchone()["count"]
+            return {"status": "ok", "equipment_count": count}, 200
+        except Exception as exc:
+            logger.error("Seeding failed: %s", exc)
+            return {"status": "error", "message": str(exc)}, 500
+
+    # Auto-seed equipment if table is empty
+    try:
+        from database.connection import get_db_connection
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) as count FROM equipment")
+            row = cur.fetchone()
+            if row and row["count"] == 0:
+                logger.info("Equipment table empty, auto-seeding standard equipment...")
+                from database.seed import seed
+                seed()
+    except Exception as exc:
+        logger.warning("Could not auto-seed equipment on startup: %s", exc)
+
     logger.info("FieldVoice backend ready")
     return app
 
@@ -61,3 +109,4 @@ app = create_app()
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+

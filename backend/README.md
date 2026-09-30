@@ -124,4 +124,4 @@ retries for the same inspection, field, value, and evidence are idempotent.
 ## Notes
 
 - The backend uses a Flask application factory pattern (`create_app`) for clean extensibility.
-- Inspection lifecycle, observation, ticket, alert, and report endpoints remain future phases.
+- Complete implementation includes equipment catalog, inspections, observations, tickets, alerts, reports, dashboards, and voice tool endpoints.

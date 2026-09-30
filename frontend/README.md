@@ -39,7 +39,6 @@ npm run build
 ```
 
 ## Notes
-
-- Tailwind CSS is configured and ready to use.
-- API integration with the Flask backend will be added in a future phase.
-- The current UI is a placeholder — the full dashboard has not been implemented yet.
+- Custom CSS design system using curated industrial tokens and accessible contrast.
+- Fully integrated with Flask backend REST API and tools endpoints.
+- Voice agent panel features real-time audio capture, live transcription, and activity event telemetry.

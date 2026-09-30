@@ -24,8 +24,9 @@ def create_app():
     # Validate environment before serving requests
     Config.validate()
 
-    # CORS — restrict to the configured frontend origin
-    CORS(app, resources={r"/api/*": {"origins": Config.FRONTEND_ORIGIN}})
+    # CORS — allow configured frontend origin(s) or wildcard
+    cors_origins = [o.strip() for o in Config.FRONTEND_ORIGIN.split(",")] if "," in Config.FRONTEND_ORIGIN else Config.FRONTEND_ORIGIN
+    CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 
     # ------------------------------------------------------------------
     # Register route blueprints
@@ -56,6 +57,7 @@ def create_app():
     return app
 
 
+app = create_app()
+
 if __name__ == "__main__":
-    app = create_app()
     app.run(debug=True, port=5000)

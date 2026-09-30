@@ -15,6 +15,10 @@ Verifies:
 import json
 import sys
 import traceback
+import werkzeug
+if not hasattr(werkzeug, "__version__"):
+    werkzeug.__version__ = "3.0.0"
+
 from app import create_app
 from config import Config
 from database.connection import get_connection

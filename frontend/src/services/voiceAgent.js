@@ -18,7 +18,7 @@ import { executeVoiceTool } from "./api.js";
 
 const ASSEMBLYAI_WS_URL = "wss://agents.assemblyai.com/v1/ws";
 const SAMPLE_RATE = 24_000; // AssemblyAI Voice Agent PCM format
-const BACKEND_BASE = ""; // empty string = same-origin (Vite proxy handles /api)
+const BACKEND_BASE = import.meta.env.VITE_API_BASE_URL || ""; // empty string = same-origin
 
 /** Connection state machine */
 export const ConnectionState = Object.freeze({
@@ -252,17 +252,18 @@ export class VoiceAgent {
 
     switch (msg.type) {
       case "session.ready":
-        console.log("[Voice] session.ready");
-        this._sessionReady = true;
-        this._setState(ConnectionState.LISTENING);
-        if (!this._workletNode) {
-          this._startMicrophone();
-        }
-        this._emitActivity("system", "Voice assistant ready (listening)", "completed");
-        break;
-
       case "session.updated":
-        console.log("[Voice] session.updated");
+        if (!this._sessionReady) {
+          console.log("[Voice] Session ready and active");
+          this._sessionReady = true;
+          this._setState(ConnectionState.LISTENING);
+          if (!this._workletNode) {
+            this._startMicrophone();
+          }
+          this._emitActivity("system", "Voice assistant ready (listening)", "completed");
+        } else {
+          console.log("[Voice] session.updated");
+        }
         break;
 
       case "SpeechStarted":

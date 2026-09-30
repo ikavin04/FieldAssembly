@@ -15,6 +15,10 @@ Covers:
 """
 
 import sys
+import werkzeug
+if not hasattr(werkzeug, "__version__"):
+    werkzeug.__version__ = "3.0.0"
+
 from app import create_app
 from database.connection import get_connection
 from models.equipment import get_equipment_by_id

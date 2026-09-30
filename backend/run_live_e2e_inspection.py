@@ -15,6 +15,10 @@ Performs one complete, authoritative inspection on AC-001:
 
 import json
 import sys
+import werkzeug
+if not hasattr(werkzeug, "__version__"):
+    werkzeug.__version__ = "3.0.0"
+
 from app import create_app
 from database.connection import get_connection
 

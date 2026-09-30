@@ -7,7 +7,7 @@
  *   - voice
  *   - key terms
  *   - turn detection / VAD settings
- *   - tools (placeholder array for Step 5+)
+ *   - tools (registered inspection, equipment, observation, ticket, alert, status tools)
  *
  * Separating config from the WebSocket service keeps things modular and
  * makes it easy to add tools, update the prompt, or swap voices later.
